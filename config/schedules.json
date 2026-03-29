@@ -1,0 +1,34 @@
+{
+  "agents": {
+    "cold-outreach": {
+      "cron": "7 */2 * * *",
+      "description": "Every 2 hours at :07",
+      "priority": "high",
+      "auto_mode": true
+    },
+    "linkedin-engage": {
+      "cron": "23 8,12,16 * * *",
+      "description": "3x daily (8:23am, 12:23pm, 4:23pm)",
+      "priority": "high",
+      "auto_mode": true
+    },
+    "lead-router": {
+      "cron": "37 */2 * * *",
+      "description": "Every 2 hours at :37 (30min after outreach)",
+      "priority": "medium",
+      "auto_mode": true
+    },
+    "content-strategist": {
+      "cron": "0 9 * * 1",
+      "description": "Monday 9am",
+      "priority": "medium",
+      "auto_mode": false
+    },
+    "weekly-strategist": {
+      "cron": "0 20 * * 0",
+      "description": "Sunday 8pm",
+      "priority": "high",
+      "auto_mode": false
+    }
+  }
+}

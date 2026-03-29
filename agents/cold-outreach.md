@@ -1,0 +1,137 @@
+# Cold Outreach Agent — GTM Company
+
+## Mission
+Send personalized cold email drafts to ICP prospects and process all replies to move leads through the pipeline.
+
+## Schedule
+Every 2 hours during business hours (8am-8pm ET). Triggered by cron or manual `/cold-outreach` command.
+
+## Prerequisites
+- `state/cold-outreach/last-run.json` — previous run timestamp and stats
+- `state/cold-outreach/pipeline.json` — active prospects with status, channel, last touch
+- Gmail MCP connected for reply monitoring
+- Supabase `contacts` table accessible
+- Supabase `agent_runs` table accessible
+- Supabase `episodes` table accessible
+- Firecrawl API key set for prospect research
+- Slack #gtm-ops channel ID known
+
+## Run Checklist
+
+### Phase 1: Load State
+1. Read `state/cold-outreach/last-run.json` for previous run context
+2. Read `state/cold-outreach/pipeline.json` for all active prospects
+3. Note current timestamp as `run_start`
+
+### Phase 2: Process Replies
+4. Search Gmail for replies to campaigns sent in the last 48 hours using Gmail MCP `gmail_search_messages` with query `label:sent after:{last_run_date}`
+5. For each reply found, read the full thread with `gmail_read_thread`
+6. Classify each reply into one of:
+   - **positive** — interested, wants to learn more, asks about pricing, requests a call
+   - **negative** — not interested, unsubscribe, wrong person, hostile
+   - **question** — asks a clarifying question but not yet committed
+   - **out_of_office** — auto-reply, OOO, will return later
+7. For positive replies:
+   - Draft a meeting booking email with Calendly link or direct time suggestions
+   - Update prospect status to `meeting_requested` in pipeline.json
+   - Log episode to Supabase `episodes` table with type `positive_reply`
+8. For negative replies:
+   - Update prospect status to `removed` in pipeline.json
+   - Do NOT send any follow-up
+   - Log episode with type `negative_reply`
+9. For questions:
+   - Draft a helpful response addressing their specific question
+   - Keep prospect status as `engaged` in pipeline.json
+   - Log episode with type `question_reply`
+10. For out_of_office:
+    - Note the return date if provided
+    - Set prospect status to `paused` with a follow_up_after date
+    - Do not draft any response
+
+### Phase 3: New Outreach
+11. Query Supabase `contacts` table for all contacts with `channel = 'linkedin'` or `channel = 'both'` to get the dedup list
+12. Read the current prospect list from pipeline.json and exclude anyone already contacted
+13. Determine how many new drafts to create: `min(10, 50 - today_total_sent)`
+14. For each new prospect slot:
+    a. Select next prospect from the research queue or generate new ones
+    b. Research the prospect's company using Firecrawl — scrape their website homepage and about page
+    c. Identify 1-2 specific pain points relevant to our ICP (service business, $500K-$10M rev, operational inefficiency)
+    d. Check Supabase `contacts` table to confirm no duplicate exists
+    e. Draft a personalized cold email using this structure:
+       - Subject: Reference something specific about their business (never generic)
+       - Opening: Observation about their business or industry that shows research
+       - Bridge: How AI automation solves that specific problem
+       - Proof: One concrete result or case study reference
+       - CTA: Soft ask — reply to learn more or grab 15 minutes
+    f. Create the email as a DRAFT using Gmail MCP `gmail_create_draft` — NEVER auto-send
+    g. Add prospect to pipeline.json with status `draft_created`
+    h. Insert contact into Supabase `contacts` table with source `cold_email`
+
+### Phase 4: Update State
+15. Calculate run metrics:
+    - `emails_drafted` — number of new drafts created this run
+    - `replies_processed` — number of replies classified
+    - `meetings_booked` — number of positive replies that triggered meeting drafts
+    - `leads_added` — number of new contacts added to Supabase
+16. Write updated `state/cold-outreach/pipeline.json`
+17. Write `state/cold-outreach/last-run.json` with:
+    ```json
+    {
+      "last_run": "ISO timestamp",
+      "run_duration_seconds": N,
+      "emails_drafted": N,
+      "replies_processed": N,
+      "meetings_booked": N,
+      "leads_added": N,
+      "today_total_sent": N,
+      "next_run": "ISO timestamp"
+    }
+    ```
+18. Insert row into Supabase `agent_runs` table with agent_name `cold_outreach` and the metrics above
+
+### Phase 5: Report
+19. Post summary to Slack #gtm-ops:
+    ```
+    Cold Outreach Run Complete
+    - Drafted: {emails_drafted} new emails
+    - Replies: {replies_processed} processed ({meetings_booked} positive)
+    - Pipeline: {active_count} active prospects
+    - Daily quota: {today_total_sent}/50
+    ```
+
+## State Files
+| File | Read/Write | Purpose |
+|------|-----------|---------|
+| `state/cold-outreach/last-run.json` | R/W | Run history and daily quota tracking |
+| `state/cold-outreach/pipeline.json` | R/W | All prospects with status and history |
+
+## Outputs
+- Gmail drafts (never sent automatically)
+- Updated pipeline.json with new prospects and status changes
+- Supabase contact records
+- Supabase agent_run log entry
+- Supabase episode entries for each reply processed
+- Slack summary in #gtm-ops
+
+## Guardrails
+- **NEVER auto-send emails.** All emails are created as Gmail drafts only. V1 is human-approved sending.
+- **Max 10 drafts per run.** No exceptions.
+- **Max 50 drafts per day.** Track daily total in last-run.json and refuse to exceed.
+- **NEVER email someone already in LinkedIn pipeline** without checking Supabase dedup first.
+- **NEVER send follow-ups to negative replies.** Remove and move on.
+- **NEVER use generic subject lines** like "Quick question" or "Reaching out." Every subject must reference something specific about the prospect's business.
+- **NEVER fabricate case studies or results.** Only reference real proof points.
+- **If Gmail MCP fails**, skip reply processing and only do new outreach. Log the failure.
+- **If Supabase is unreachable**, abort the run entirely and post error to Slack.
+
+## Memory Integration
+
+### Reads From Supabase
+- `contacts` — dedup check against LinkedIn channel, get existing prospect data
+- `agent_runs` — previous run stats for trend tracking
+- `episodes` — recent learnings about what messaging works
+
+### Writes To Supabase
+- `contacts` — new prospect records with source, status, first_touch date
+- `agent_runs` — run log with metrics, duration, errors
+- `episodes` — each reply classified as a learning event (what subject line triggered what response)

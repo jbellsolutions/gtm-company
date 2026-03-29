@@ -1,0 +1,22 @@
+{
+  "email": {
+    "max_drafts_per_run": 10,
+    "max_emails_per_day": 50,
+    "reply_sla_hours": 4
+  },
+  "linkedin": {
+    "max_posts_per_day": 1,
+    "max_comments_per_run": 10,
+    "max_connection_requests_per_day": 20
+  },
+  "budget": {
+    "max_tokens_per_run": 50000,
+    "max_monthly_spend_cents": 15000,
+    "circuit_breaker_multiplier": 2
+  },
+  "general": {
+    "stale_agent_minutes": 180,
+    "max_consecutive_failures": 3,
+    "escalation_channel": "#gtm-ops"
+  }
+}

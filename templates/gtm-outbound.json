@@ -1,0 +1,118 @@
+{
+  "template_id": "gtm-outbound",
+  "name": "Go-To-Market Outbound",
+  "version": "1.0.0",
+  "description": "Cold email + LinkedIn + content strategy GTM machine",
+  "agents": [
+    {
+      "id": "cold-outreach",
+      "playbook": "agents/cold-outreach.md",
+      "schedule": "7 */2 * * *",
+      "tools": ["gmail", "firecrawl", "clickup"],
+      "auto_mode": true
+    },
+    {
+      "id": "linkedin-engage",
+      "playbook": "agents/linkedin-engage.md",
+      "schedule": "23 8,12,16 * * *",
+      "tools": ["browser", "slack"],
+      "auto_mode": true
+    },
+    {
+      "id": "lead-router",
+      "playbook": "agents/lead-router.md",
+      "schedule": "37 */2 * * *",
+      "tools": ["slack"],
+      "auto_mode": true
+    },
+    {
+      "id": "content-strategist",
+      "playbook": "agents/content-strategist.md",
+      "schedule": "0 9 * * 1",
+      "tools": ["slack", "notion"],
+      "auto_mode": false
+    },
+    {
+      "id": "weekly-strategist",
+      "playbook": "agents/weekly-strategist.md",
+      "schedule": "0 20 * * 0",
+      "tools": ["slack"],
+      "auto_mode": false
+    }
+  ],
+  "config_vars": [
+    {
+      "key": "company_name",
+      "required": true,
+      "description": "Your company name"
+    },
+    {
+      "key": "icp_description",
+      "required": true,
+      "description": "Ideal Customer Profile description"
+    },
+    {
+      "key": "offer_name",
+      "required": true,
+      "description": "Main offer/product name"
+    },
+    {
+      "key": "offer_tagline",
+      "required": true,
+      "description": "One-line value prop"
+    },
+    {
+      "key": "verticals",
+      "required": true,
+      "type": "array",
+      "description": "Target industries"
+    },
+    {
+      "key": "proof_points",
+      "required": false,
+      "type": "array",
+      "description": "Social proof and case studies"
+    },
+    {
+      "key": "email_daily_limit",
+      "required": false,
+      "default": 50
+    },
+    {
+      "key": "slack_channel",
+      "required": false,
+      "default": "#gtm-ops"
+    },
+    {
+      "key": "booking_link",
+      "required": true,
+      "description": "Calendar booking URL"
+    }
+  ],
+  "state_init": {
+    "directories": [
+      "cold-outreach",
+      "linkedin-engage",
+      "lead-router",
+      "weekly-strategist",
+      "content-strategist"
+    ],
+    "default_files": {
+      "last-run.json": {
+        "status": "never_run",
+        "run_count": 0,
+        "last_run_at": null
+      },
+      "strategy.json": {
+        "version": 1,
+        "learnings": []
+      }
+    }
+  },
+  "supabase_tables": [
+    "agent_runs",
+    "memories",
+    "contacts",
+    "episodes"
+  ]
+}

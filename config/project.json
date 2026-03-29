@@ -1,0 +1,69 @@
+{
+  "project_id": "ai-integrators-gtm",
+  "company_name": "AI Integrators (UsingAIToScale.com)",
+  "mission": "Help service businesses replace manual operations with autonomous AI systems",
+  "icp": {
+    "description": "Service business owners doing $500K-$10M in revenue",
+    "verticals": ["staffing agencies", "insurance agencies", "marketing agencies", "consultancies", "home services"],
+    "pain_points": [
+      "Operations depend on one person (owner or key employee)",
+      "Can't scale without hiring expensive ops staff",
+      "Repetitive tasks eating into revenue-generating time",
+      "Inconsistent follow-up losing deals"
+    ],
+    "decision_maker": "Owner, CEO, or VP Operations"
+  },
+  "offer": {
+    "name": "AI Operations System",
+    "tagline": "Replace your $150K ops team with AI that runs 24/7",
+    "tiers": [
+      {
+        "name": "Foundation",
+        "setup": "$1,000-$2,000",
+        "monthly": "$300/mo",
+        "includes": ["Cold email outreach system", "Basic CRM automation", "Weekly reporting"]
+      },
+      {
+        "name": "Growth",
+        "setup": "$2,500-$5,000",
+        "monthly": "$697-$1,497/mo",
+        "includes": ["Full outbound system (email + LinkedIn)", "AI content creation", "Lead qualification", "Meeting booking"]
+      },
+      {
+        "name": "Full GTM",
+        "setup": "$5,000-$10,000",
+        "monthly": "$2,997-$4,997/mo",
+        "includes": ["Everything in Growth", "AI COO for operations", "Autonomous fulfillment", "Custom agent development"]
+      }
+    ],
+    "proof_points": [
+      "Staffing agency: $180K → $340K revenue in one quarter",
+      "Cold email: 25-50 meetings/month at $3.90-7.80/meeting",
+      "Replaces: 3-5 SDRs ($150K-$350K/yr) + 1 COO ($120K-$180K/yr)"
+    ]
+  },
+  "channels": {
+    "cold_email": {
+      "daily_limit": 50,
+      "drafts_per_run": 10,
+      "tool": "smartlead",
+      "booking_link": "cal.com"
+    },
+    "linkedin": {
+      "posts_per_day": 1,
+      "comments_per_run": 10,
+      "tool": "linkedin-autopilot-v2"
+    }
+  },
+  "integrations": {
+    "gmail": true,
+    "clickup": true,
+    "slack": true,
+    "calendar": true,
+    "notion": true,
+    "firecrawl": true
+  },
+  "slack_channel": "#gtm-ops",
+  "expert_series_mode": true,
+  "documentation_enabled": true
+}
