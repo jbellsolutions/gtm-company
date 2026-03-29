@@ -5,7 +5,8 @@
 #
 # Required env vars: SUPABASE_URL, SUPABASE_ANON_KEY
 
-set -euo pipefail
+# Note: don't set -euo pipefail here — this file is sourced by other scripts
+# The caller should set their own error handling
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -86,7 +87,7 @@ mem_init() {
   response=$(curl -s -w "\n%{http_code}" \
     -H "apikey: ${SUPABASE_ANON_KEY}" \
     -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
-    "${SUPABASE_URL}/rest/v1/" 2>/dev/null)
+    "${SUPABASE_URL}/rest/v1/memories?limit=1&select=id" 2>/dev/null)
   http_code=$(echo "$response" | tail -1)
   if [[ "$http_code" -ge 400 ]]; then
     echo "[memory.sh] FATAL: Cannot connect to Supabase (HTTP $http_code)" >&2
