@@ -28,6 +28,8 @@ const AGENTS = [
   { name: 'lead-router', label: 'Lead Router', icon: 'R', color: 'var(--accent-green)' },
   { name: 'content-strategist', label: 'Content Strategist', icon: 'C', color: 'var(--accent-yellow)' },
   { name: 'weekly-strategist', label: 'Weekly Strategist', icon: 'W', color: 'var(--accent-red)' },
+  { name: 'power-partnerships', label: 'Power Partnerships', icon: 'P', color: 'var(--accent-green)' },
+  { name: 'content-engine', label: 'Content Engine', icon: 'N', color: 'var(--accent-purple)' },
 ];
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

@@ -26,3 +26,5 @@ CREATE INDEX idx_messages_priority ON agent_messages(project_id, priority, statu
 
 ALTER TABLE agent_messages ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all for agent_messages" ON agent_messages FOR ALL USING (true);
+
+ALTER PUBLICATION supabase_realtime ADD TABLE agent_messages;

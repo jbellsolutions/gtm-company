@@ -110,3 +110,6 @@ CREATE POLICY "Allow all for agent_runs" ON agent_runs FOR ALL USING (true);
 CREATE POLICY "Allow all for memories" ON memories FOR ALL USING (true);
 CREATE POLICY "Allow all for contacts" ON contacts FOR ALL USING (true);
 CREATE POLICY "Allow all for episodes" ON episodes FOR ALL USING (true);
+
+-- Enable Realtime for dashboard subscriptions
+ALTER PUBLICATION supabase_realtime ADD TABLE agent_runs, memories, contacts, episodes;

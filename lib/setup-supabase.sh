@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# setup-supabase.sh — Guides user through Supabase setup for GTM Company
+# setup-supabase.sh — Initialize Supabase for a GTM Company project
+# Usage: bash lib/setup-supabase.sh
+#
+# Reads SUPABASE_URL and SUPABASE_ANON_KEY from .env, tests connectivity,
+# runs migration SQL files (v1 + v2), creates agent_status table, seeds
+# agent_status rows for all 8 agents, enables Realtime publication on all
+# tables, and verifies all 6 tables exist.
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-MIGRATION_FILE="$SCRIPT_DIR/supabase-migration.sql"
-ENV_FILE="$PROJECT_ROOT/.env"
-ENV_EXAMPLE="$PROJECT_ROOT/.env.example"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Colors
 RED='\033[0;31m'
@@ -14,191 +18,279 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
+BOLD='\033[1m'
 NC='\033[0m'
 
 info()  { echo -e "${BLUE}[INFO]${NC}  $*"; }
-ok()    { echo -e "${GREEN}[OK]${NC}    $*"; }
+ok()    { echo -e "${GREEN}  [OK]${NC}  $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
-err()   { echo -e "${RED}[ERR]${NC}   $*"; }
-step()  { echo -e "\n${CYAN}==> $*${NC}"; }
+err()   { echo -e "${RED}[ERR]${NC}   $*" >&2; }
+step()  { echo -e "\n${CYAN}${BOLD}==> $*${NC}"; }
+
+ERRORS=0
+WARNINGS=0
 
 # ──────────────────────────────────────────────
-# Step 1: Check .env
+# Load .env
 # ──────────────────────────────────────────────
-step "Step 1: Checking environment configuration"
 
-if [ -f "$ENV_FILE" ]; then
-  ok ".env file exists"
-  source "$ENV_FILE"
-else
-  warn ".env file not found"
-  if [ -f "$ENV_EXAMPLE" ]; then
-    info "Creating .env from .env.example"
-    cp "$ENV_EXAMPLE" "$ENV_FILE"
-    warn "Please edit .env with your actual Supabase credentials"
-    echo ""
-    echo "  Required variables:"
-    echo "    SUPABASE_URL=https://your-project.supabase.co"
-    echo "    SUPABASE_ANON_KEY=your-anon-key"
-    echo "    SUPABASE_SERVICE_KEY=your-service-role-key"
-    echo ""
-    read -p "Press Enter after editing .env, or Ctrl+C to abort... "
-    source "$ENV_FILE"
-  else
-    err "No .env or .env.example found"
-    echo ""
-    echo "Create .env with these variables:"
-    echo ""
-    echo "  SUPABASE_URL=https://your-project.supabase.co"
-    echo "  SUPABASE_ANON_KEY=your-anon-key"
-    echo "  SUPABASE_SERVICE_KEY=your-service-role-key"
-    echo "  PROJECT_ID=my-gtm-project"
-    echo ""
-    exit 1
-  fi
-fi
-
-# Validate required vars
-MISSING=0
-for VAR in SUPABASE_URL SUPABASE_ANON_KEY; do
-  if [ -z "${!VAR:-}" ]; then
-    err "Missing required variable: $VAR"
-    MISSING=1
-  fi
-done
-if [ "$MISSING" -eq 1 ]; then
-  err "Please set all required variables in .env"
+ENV_FILE="$PROJECT_ROOT/.env"
+if [[ ! -f "$ENV_FILE" ]]; then
+  err "No .env file found at $ENV_FILE"
+  err "Copy .env.example to .env and fill in your Supabase credentials."
   exit 1
 fi
-ok "Required environment variables set"
 
-# ──────────────────────────────────────────────
-# Step 2: Test connectivity
-# ──────────────────────────────────────────────
-step "Step 2: Testing Supabase connectivity"
+# Source .env safely (handle quoted values)
+set -a
+while IFS='=' read -r key val; do
+  [[ -z "$key" || "$key" == \#* ]] && continue
+  val="${val%\"}" ; val="${val#\"}" ; val="${val%\'}" ; val="${val#\'}"
+  export "$key=$val"
+done < "$ENV_FILE"
+set +a
 
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-  "${SUPABASE_URL}/rest/v1/" \
-  -H "apikey: ${SUPABASE_ANON_KEY}" \
-  -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
-  2>/dev/null || echo "000")
-
-if [ "$HTTP_CODE" = "200" ]; then
-  ok "Supabase REST API reachable (HTTP $HTTP_CODE)"
-elif [ "$HTTP_CODE" = "000" ]; then
-  err "Cannot reach Supabase at ${SUPABASE_URL}"
-  err "Check your SUPABASE_URL and network connection"
-  exit 1
-else
-  warn "Supabase returned HTTP $HTTP_CODE (may still work)"
+if [[ -z "${SUPABASE_URL:-}" ]]; then
+  err "SUPABASE_URL not set in .env"; exit 1
 fi
-
-# ──────────────────────────────────────────────
-# Step 3: Run migration
-# ──────────────────────────────────────────────
-step "Step 3: Running database migration"
-
-if ! [ -f "$MIGRATION_FILE" ]; then
-  err "Migration file not found: $MIGRATION_FILE"
-  exit 1
+if [[ -z "${SUPABASE_ANON_KEY:-}" ]]; then
+  err "SUPABASE_ANON_KEY not set in .env"; exit 1
 fi
 
 echo ""
-echo "  Choose migration method:"
-echo "    1) Run via Supabase CLI (requires 'supabase' installed)"
-echo "    2) Run via psql (requires database URL)"
-echo "    3) Print SQL for manual copy into Supabase SQL Editor"
+echo -e "${BOLD}${BLUE}GTM Company — Supabase Setup${NC}"
+echo -e "URL: ${SUPABASE_URL}"
 echo ""
-read -p "  Choice [1/2/3]: " CHOICE
-
-case "${CHOICE:-3}" in
-  1)
-    if command -v supabase &>/dev/null; then
-      info "Running migration via Supabase CLI..."
-      supabase db push --db-url "${DATABASE_URL:-}" < "$MIGRATION_FILE" 2>/dev/null || {
-        warn "Supabase CLI push failed. Trying direct execution..."
-        supabase sql --file "$MIGRATION_FILE" 2>/dev/null || {
-          err "Supabase CLI execution failed"
-          warn "Falling back to printing SQL..."
-          CHOICE=3
-        }
-      }
-      if [ "$CHOICE" != "3" ]; then
-        ok "Migration applied via Supabase CLI"
-      fi
-    else
-      warn "Supabase CLI not found. Install: brew install supabase/tap/supabase"
-      CHOICE=3
-    fi
-    ;;
-  2)
-    if [ -z "${DATABASE_URL:-}" ]; then
-      echo ""
-      echo "  Enter your Supabase database URL:"
-      echo "  (Find it in Supabase Dashboard > Settings > Database > Connection string > URI)"
-      read -p "  DATABASE_URL: " DATABASE_URL
-    fi
-    if command -v psql &>/dev/null; then
-      info "Running migration via psql..."
-      psql "$DATABASE_URL" -f "$MIGRATION_FILE" && ok "Migration applied via psql" || {
-        err "psql execution failed"
-        CHOICE=3
-      }
-    else
-      warn "psql not found. Install: brew install postgresql"
-      CHOICE=3
-    fi
-    ;;
-esac
-
-if [ "${CHOICE:-3}" = "3" ]; then
-  echo ""
-  echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-  echo -e "${YELLOW}  Copy the SQL below into Supabase SQL Editor:${NC}"
-  echo -e "${YELLOW}  Dashboard > SQL Editor > New Query > Paste > Run${NC}"
-  echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-  echo ""
-  cat "$MIGRATION_FILE"
-  echo ""
-  echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-  echo ""
-  read -p "Press Enter after running the SQL in Supabase... "
-fi
 
 # ──────────────────────────────────────────────
-# Step 4: Verify tables exist
+# Helper: run SQL via best available method
 # ──────────────────────────────────────────────
-step "Step 4: Verifying tables"
 
 AUTH_KEY="${SUPABASE_SERVICE_KEY:-${SUPABASE_ANON_KEY}}"
-TABLES=("agent_runs" "memories" "contacts" "episodes")
-ALL_OK=1
 
-for TABLE in "${TABLES[@]}"; do
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-    "${SUPABASE_URL}/rest/v1/${TABLE}?select=id&limit=0" \
-    -H "apikey: ${AUTH_KEY}" \
+run_sql() {
+  local sql="$1"
+  local label="$2"
+
+  # Method 1: psql if DATABASE_URL is set
+  if [[ -n "${DATABASE_URL:-}" ]] && command -v psql &>/dev/null; then
+    echo "$sql" | psql "$DATABASE_URL" -f - 2>&1 && return 0
+  fi
+
+  # Method 2: Supabase SQL RPC endpoint
+  local response http_code body
+  response=$(curl -s -w "\n%{http_code}" \
+    -X POST \
+    -H "apikey: ${SUPABASE_ANON_KEY}" \
     -H "Authorization: Bearer ${AUTH_KEY}" \
-    2>/dev/null || echo "000")
+    -H "Content-Type: application/json" \
+    -d "$(jq -n --arg sql "$sql" '{query: $sql}')" \
+    "${SUPABASE_URL}/rest/v1/rpc/exec_sql" 2>/dev/null)
+  http_code=$(echo "$response" | tail -1)
 
-  if [ "$HTTP_CODE" = "200" ]; then
-    ok "Table '${TABLE}' exists and accessible"
+  if [[ "$http_code" -lt 400 ]]; then
+    return 0
+  fi
+
+  # Method 3: pg-meta endpoint
+  response=$(curl -s -w "\n%{http_code}" \
+    -X POST \
+    -H "apikey: ${SUPABASE_ANON_KEY}" \
+    -H "Authorization: Bearer ${AUTH_KEY}" \
+    -H "Content-Type: application/json" \
+    -d "$(jq -n --arg sql "$sql" '{query: $sql}')" \
+    "${SUPABASE_URL}/pg/query" 2>/dev/null)
+  http_code=$(echo "$response" | tail -1)
+
+  if [[ "$http_code" -lt 400 ]]; then
+    return 0
+  fi
+
+  return 1
+}
+
+run_sql_file() {
+  local sql_file="$1"
+  local label="$2"
+
+  if [[ ! -f "$sql_file" ]]; then
+    warn "SQL file not found: $sql_file"
+    WARNINGS=$((WARNINGS + 1))
+    return 1
+  fi
+
+  info "Running $label: $(basename "$sql_file")"
+  local sql_content
+  sql_content=$(cat "$sql_file")
+
+  if run_sql "$sql_content" "$label"; then
+    ok "$label complete"
   else
-    err "Table '${TABLE}' not found or not accessible (HTTP $HTTP_CODE)"
-    ALL_OK=0
+    warn "$label failed via API. Run this SQL manually in the Supabase SQL Editor:"
+    warn "  File: $sql_file"
+    WARNINGS=$((WARNINGS + 1))
+    return 1
+  fi
+}
+
+# ──────────────────────────────────────────────
+# Step 1: Test connectivity
+# ──────────────────────────────────────────────
+step "Step 1: Testing Supabase connectivity"
+
+CONN_RESP=$(curl -s -w "\n%{http_code}" \
+  -H "apikey: ${SUPABASE_ANON_KEY}" \
+  -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+  "${SUPABASE_URL}/rest/v1/" 2>/dev/null)
+CONN_CODE=$(echo "$CONN_RESP" | tail -1)
+
+if [[ "$CONN_CODE" -ge 400 || "$CONN_CODE" == "000" ]]; then
+  err "Cannot connect to Supabase (HTTP $CONN_CODE)"
+  err "Check SUPABASE_URL and SUPABASE_ANON_KEY in .env"
+  exit 1
+fi
+ok "Connected to Supabase"
+
+# ──────────────────────────────────────────────
+# Step 2: Run migration v1 (core tables)
+# ──────────────────────────────────────────────
+step "Step 2: Running migration v1 (core tables)"
+run_sql_file "$SCRIPT_DIR/supabase-migration.sql" "Migration v1"
+
+# ──────────────────────────────────────────────
+# Step 3: Run migration v2 (agent_messages)
+# ──────────────────────────────────────────────
+step "Step 3: Running migration v2 (agent_messages)"
+run_sql_file "$SCRIPT_DIR/supabase-migration-v2.sql" "Migration v2"
+
+# ──────────────────────────────────────────────
+# Step 4: Create agent_status table
+# ──────────────────────────────────────────────
+step "Step 4: Creating agent_status table"
+
+AGENT_STATUS_SQL=$(cat <<'EOSQL'
+CREATE TABLE IF NOT EXISTS agent_status (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id text NOT NULL,
+  agent_id text NOT NULL,
+  status text DEFAULT 'idle' CHECK (status IN ('idle', 'running', 'error', 'disabled')),
+  last_run_at timestamptz,
+  next_run_at timestamptz,
+  run_count integer DEFAULT 0,
+  error_count integer DEFAULT 0,
+  last_error text,
+  config jsonb DEFAULT '{}',
+  updated_at timestamptz DEFAULT now(),
+  UNIQUE(project_id, agent_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_status_project ON agent_status(project_id);
+CREATE INDEX IF NOT EXISTS idx_agent_status_agent ON agent_status(project_id, agent_id);
+
+ALTER TABLE agent_status ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow all for agent_status') THEN
+    CREATE POLICY "Allow all for agent_status" ON agent_status FOR ALL USING (true);
+  END IF;
+END $$;
+EOSQL
+)
+
+if run_sql "$AGENT_STATUS_SQL" "agent_status"; then
+  ok "agent_status table created"
+else
+  warn "Could not create agent_status via API. Run the SQL manually."
+  WARNINGS=$((WARNINGS + 1))
+fi
+
+# ──────────────────────────────────────────────
+# Step 5: Seed agent_status rows for all 8 agents
+# ──────────────────────────────────────────────
+step "Step 5: Seeding agent_status rows"
+
+PROJECT_ID="${PROJECT_ID:-$(jq -r '.project_id // empty' "$PROJECT_ROOT/config/project.json" 2>/dev/null || basename "$PROJECT_ROOT")}"
+
+AGENTS=("cold-outreach" "linkedin-engage" "lead-router" "content-strategist" "weekly-strategist" "power-partnerships" "content-engine" "orchestrator")
+
+for agent in "${AGENTS[@]}"; do
+  NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  SEED_PAYLOAD=$(jq -n \
+    --arg pid "$PROJECT_ID" \
+    --arg aid "$agent" \
+    --arg now "$NOW" \
+    '{project_id: $pid, agent_id: $aid, status: "idle", run_count: 0, error_count: 0, updated_at: $now}')
+
+  SEED_RESP=$(curl -s -w "\n%{http_code}" \
+    -X POST \
+    -H "apikey: ${SUPABASE_ANON_KEY}" \
+    -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+    -H "Content-Type: application/json" \
+    -H "Prefer: resolution=merge-duplicates,return=representation" \
+    -d "$SEED_PAYLOAD" \
+    "${SUPABASE_URL}/rest/v1/agent_status" 2>/dev/null)
+  SEED_CODE=$(echo "$SEED_RESP" | tail -1)
+
+  if [[ "$SEED_CODE" -lt 400 ]]; then
+    ok "Seeded: $agent"
+  else
+    warn "Failed to seed agent_status for $agent (HTTP $SEED_CODE)"
+    WARNINGS=$((WARNINGS + 1))
   fi
 done
 
-echo ""
-if [ "$ALL_OK" -eq 1 ]; then
-  echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-  echo -e "${GREEN}  Supabase setup complete!${NC}"
-  echo -e "${GREEN}  All 4 tables created and verified.${NC}"
-  echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+# ──────────────────────────────────────────────
+# Step 6: Enable Realtime publication
+# ──────────────────────────────────────────────
+step "Step 6: Enabling Realtime publication"
+
+REALTIME_SQL="ALTER PUBLICATION supabase_realtime ADD TABLE agent_runs, memories, contacts, episodes, agent_messages, agent_status;"
+
+if run_sql "$REALTIME_SQL" "Realtime"; then
+  ok "Realtime enabled on all tables"
 else
-  echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-  echo -e "${RED}  Some tables could not be verified.${NC}"
-  echo -e "${RED}  Check Supabase Dashboard > Table Editor${NC}"
-  echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-  exit 1
+  warn "Realtime publication may need manual setup in Supabase SQL Editor."
+  WARNINGS=$((WARNINGS + 1))
 fi
+
+# ──────────────────────────────────────────────
+# Step 7: Verify all 6 tables exist
+# ──────────────────────────────────────────────
+step "Step 7: Verifying all tables"
+
+EXPECTED_TABLES=("agent_runs" "memories" "contacts" "episodes" "agent_messages" "agent_status")
+
+for table in "${EXPECTED_TABLES[@]}"; do
+  VERIFY_RESP=$(curl -s -w "\n%{http_code}" \
+    -H "apikey: ${SUPABASE_ANON_KEY}" \
+    -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+    "${SUPABASE_URL}/rest/v1/${table}?limit=0" 2>/dev/null)
+  VERIFY_CODE=$(echo "$VERIFY_RESP" | tail -1)
+
+  if [[ "$VERIFY_CODE" -lt 400 ]]; then
+    ok "Table exists: $table"
+  else
+    err "Table NOT found: $table (HTTP $VERIFY_CODE)"
+    ERRORS=$((ERRORS + 1))
+  fi
+done
+
+# ──────────────────────────────────────────────
+# Summary
+# ──────────────────────────────────────────────
+echo ""
+echo "========================================="
+if [[ "$ERRORS" -eq 0 && "$WARNINGS" -eq 0 ]]; then
+  echo -e "${GREEN}${BOLD}  Supabase setup complete!${NC}"
+  echo -e "${GREEN}  All 6 tables created and verified.${NC}"
+  echo -e "${GREEN}  Realtime publication enabled.${NC}"
+  echo -e "${GREEN}  8 agents seeded in agent_status.${NC}"
+elif [[ "$ERRORS" -eq 0 ]]; then
+  echo -e "${YELLOW}${BOLD}  Setup complete with $WARNINGS warnings.${NC}"
+  echo -e "  Some operations may need manual SQL execution."
+else
+  echo -e "${RED}${BOLD}  Setup completed with $ERRORS errors and $WARNINGS warnings.${NC}"
+  echo -e "  Check the output above and run missing SQL manually."
+fi
+echo "========================================="
+echo ""

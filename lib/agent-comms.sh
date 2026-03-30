@@ -141,6 +141,10 @@ get_messages() {
   direct=$(_comms_get "agent_messages?${filter}&to_agent=eq.${agent_id}&select=*&order=priority.desc,created_at.asc") || echo "[]"
 
   # Broadcast messages (to_agent is null)
+  # NOTE: Broadcasts should be filtered by created_at > agent's last_run timestamp
+  # to avoid re-processing old broadcasts. The caller (run-agent.sh) should pass the
+  # agent's last_run time and use it as a filter here, or mark broadcasts as processed
+  # per-agent after reading them.
   local broadcasts
   broadcasts=$(_comms_get "agent_messages?${filter}&to_agent=is.null&select=*&order=priority.desc,created_at.asc") || echo "[]"
 
@@ -216,7 +220,13 @@ get_unprocessed_escalations() {
 # ─── Queue a local outbound message (for batch sending after agent run) ─────
 # Writes messages to a temp file that run-agent.sh processes after Claude exits
 # Usage: queue_message "lead-router" "task_complete" '{"contacts_processed":15}'
-OUTBOUND_QUEUE="${TMPDIR:-/tmp}/gtm-agent-outbound-$$"
+# Persist outbound queue to state dir for crash recovery (falls back to /tmp if STATE_DIR unset)
+if [[ -n "${STATE_DIR:-}" ]]; then
+  mkdir -p "$STATE_DIR"
+  OUTBOUND_QUEUE="${STATE_DIR}/outbound-queue.jsonl"
+else
+  OUTBOUND_QUEUE="${TMPDIR:-/tmp}/gtm-agent-outbound-$$"
+fi
 
 queue_message() {
   local to_agent="$1"
@@ -224,8 +234,13 @@ queue_message() {
   local payload="$3"
   local priority="${4:-normal}"
 
-  # Append to queue file as one JSON object per line
-  echo "{\"to_agent\":\"${to_agent}\",\"message_type\":\"${message_type}\",\"payload\":${payload},\"priority\":\"${priority}\"}" >> "$OUTBOUND_QUEUE"
+  # Append to queue file as one JSON object per line (use jq for safe JSON construction)
+  jq -n \
+    --arg to "$to_agent" \
+    --arg mt "$message_type" \
+    --argjson pl "$payload" \
+    --arg pr "$priority" \
+    '{to_agent: $to, message_type: $mt, payload: $pl, priority: $pr}' >> "$OUTBOUND_QUEUE"
   echo "[agent-comms] Queued outbound: → ${to_agent} (${message_type})"
 }
 
@@ -276,6 +291,23 @@ get_inbound_instructions() {
   local project_id="${PROJECT_ID:?PROJECT_ID not set}"
 
   _comms_get "agent_messages?project_id=eq.${project_id}&to_agent=eq.${agent_id}&message_type=eq.instruction&status=eq.unread&select=*&order=created_at.asc"
+}
+
+# ─── Cleanup old messages ──────────────────────────────────────────────────
+# Archives messages older than 30 days to keep the table lean
+# Usage: cleanup_old_messages
+cleanup_old_messages() {
+  local project_id="${PROJECT_ID:?PROJECT_ID not set}"
+  local cutoff
+  cutoff=$(date -u -v-30d +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u -d "30 days ago" +"%Y-%m-%dT%H:%M:%SZ")
+
+  echo "[agent-comms] Archiving messages older than 30 days (before ${cutoff})..."
+  _comms_patch "agent_messages?project_id=eq.${project_id}&created_at=lt.${cutoff}&status=neq.archived" \
+    "{\"status\": \"archived\"}" || {
+    echo "[agent-comms] WARNING: Failed to archive old messages" >&2
+    return 1
+  }
+  echo "[agent-comms] Old messages archived."
 }
 
 echo "[agent-comms] Inter-agent communication layer loaded."

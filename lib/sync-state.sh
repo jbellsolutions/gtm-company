@@ -4,7 +4,8 @@
 #
 # Usage: source lib/sync-state.sh && sync_all "cold-outreach"
 
-set -euo pipefail
+# Note: don't set -euo pipefail here — this file is sourced by other scripts
+# The caller should set their own error handling
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -30,7 +31,8 @@ sync_run_results() {
 
   local status outputs token_usage cost_cents
   status=$(jq -r '.status // "unknown"' "$state_file")
-  outputs=$(jq -c '.' "$state_file")
+  # Truncate outputs to first 5000 chars to avoid oversized Supabase payloads
+  outputs=$(jq -c '.' "$state_file" | head -c 5000)
   token_usage=$(jq -r '.token_usage // 0' "$state_file")
   cost_cents=$(jq -r '.cost_cents // 0' "$state_file")
 

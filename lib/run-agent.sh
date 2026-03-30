@@ -19,18 +19,47 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# ─── Structured logging helper ────────────────────────────────────────────
+
+_log() {
+  local ts
+  ts="$(date +"%Y-%m-%d %H:%M:%S")"
+  echo "[${ts}] [${AGENT_NAME:-run-agent}] $*"
+}
+
 # ─── Parse arguments ───────────────────────────────────────────────────────
 
 AGENT_NAME="${1:?Usage: run-agent.sh <agent-name> [--auto]}"
-AUTO_FLAG=""
+AUTO_MODE=false
 if [[ "${2:-}" == "--auto" ]]; then
-  AUTO_FLAG="--allowedTools '*'"
+  AUTO_MODE=true
 fi
 
-echo "========================================"
-echo " GTM Agent Runner: ${AGENT_NAME}"
-echo " $(date)"
-echo "========================================"
+_log "========================================"
+_log " GTM Agent Runner: ${AGENT_NAME}"
+_log "========================================"
+
+# ─── 0. Concurrent run lock ───────────────────────────────────────────────
+
+LOCKFILE="/tmp/gtm-agent-${AGENT_NAME}.lock"
+
+cleanup_lock() {
+  rm -f "$LOCKFILE"
+}
+
+if [[ -f "$LOCKFILE" ]]; then
+  EXISTING_PID=$(cat "$LOCKFILE" 2>/dev/null || echo "")
+  if [[ -n "$EXISTING_PID" ]] && kill -0 "$EXISTING_PID" 2>/dev/null; then
+    _log "FATAL: Agent already running (PID ${EXISTING_PID}). Exiting."
+    exit 1
+  else
+    _log "WARN: Stale lock found (PID ${EXISTING_PID} not running). Removing."
+    rm -f "$LOCKFILE"
+  fi
+fi
+
+echo $$ > "$LOCKFILE"
+trap cleanup_lock EXIT
 
 # ─── 1. Source memory layer and comms layer ───────────────────────────────
 
@@ -52,10 +81,10 @@ PROJECT_ID="${PROJECT_ID:-$(jq -r '.project_id' "$PROJECT_ROOT/config/project.js
 
 PLAYBOOK="$PROJECT_ROOT/agents/${AGENT_NAME}.md"
 if [[ ! -f "$PLAYBOOK" ]]; then
-  echo "[run-agent] FATAL: Playbook not found at ${PLAYBOOK}" >&2
+  _log " FATAL: Playbook not found at ${PLAYBOOK}" >&2
   exit 1
 fi
-echo "[run-agent] Playbook: ${PLAYBOOK}"
+_log " Playbook: ${PLAYBOOK}"
 
 # ─── 3. Load memory context from Supabase ──────────────────────────────────
 
@@ -63,7 +92,7 @@ MEMORY_CONTEXT=""
 
 # Try to load recent runs (non-fatal if Supabase not configured yet)
 if mem_init 2>/dev/null; then
-  echo "[run-agent] Loading memory context..."
+  _log " Loading memory context..."
 
   RECENT_RUNS=$(get_recent_runs "$PROJECT_ID" "$AGENT_NAME" 3 2>/dev/null || echo "[]")
   RECENT_EPISODES=$(get_recent_episodes "$PROJECT_ID" 5 2>/dev/null || echo "[]")
@@ -95,9 +124,9 @@ ${AGENT_MEMORIES}
 \`\`\`
 MEMEOF
 )
-  echo "[run-agent] Memory context loaded."
+  _log " Memory context loaded."
 else
-  echo "[run-agent] WARNING: Supabase not available, running without memory context."
+  _log " WARNING: Supabase not available, running without memory context."
 fi
 
 # ─── 4. Load local state ──────────────────────────────────────────────────
@@ -118,7 +147,7 @@ if [[ -f "$STRATEGY_FILE" ]]; then
   LOCAL_STRATEGY=$(cat "$STRATEGY_FILE")
 fi
 
-echo "[run-agent] Local state loaded."
+_log " Local state loaded."
 
 # ─── 5. Load project config ───────────────────────────────────────────────
 
@@ -180,17 +209,17 @@ ${MEMORY_CONTEXT}
 PROMPTEOF
 )
 
-echo "[run-agent] Prompt built ($(echo "$PROMPT" | wc -c | tr -d ' ') chars)."
+_log " Prompt built ($(echo "$PROMPT" | wc -c | tr -d ' ') chars)."
 
 # ─── 6b. Check for inbound instructions from orchestrator ────────────────
 
 INBOUND_INSTRUCTIONS=""
 if [[ -n "${PROJECT_ID:-}" ]]; then
-  echo "[run-agent] Checking for inbound instructions..."
+  _log " Checking for inbound instructions..."
   INBOUND_RAW=$(get_inbound_instructions "$AGENT_NAME" 2>/dev/null || echo "[]")
   INBOUND_COUNT=$(echo "$INBOUND_RAW" | jq 'length' 2>/dev/null || echo "0")
   if [[ "$INBOUND_COUNT" -gt 0 ]]; then
-    echo "[run-agent] Found ${INBOUND_COUNT} inbound instruction(s) from orchestrator."
+    _log " Found ${INBOUND_COUNT} inbound instruction(s) from orchestrator."
     INBOUND_INSTRUCTIONS=$(cat <<INSTREOF
 
 ## Inbound Instructions from Orchestrator
@@ -210,7 +239,7 @@ INSTREOF
       fi
     done
   else
-    echo "[run-agent] No inbound instructions."
+    _log " No inbound instructions."
   fi
 fi
 
@@ -219,19 +248,35 @@ PROMPT="${PROMPT}${INBOUND_INSTRUCTIONS}"
 
 # ─── 7. Run Claude ─────────────────────────────────────────────────────────
 
-echo "[run-agent] Starting Claude for ${AGENT_NAME}..."
+_log " Starting Claude for ${AGENT_NAME}..."
 echo "────────────────────────────────────────"
 
 # Notify Paperclip: agent is now running
 pc_heartbeat "$AGENT_NAME" "running" "Agent run started" 2>/dev/null || true
 
-eval "echo \"\$PROMPT\" | claude ${AUTO_FLAG} --print -p -"
+# Write prompt to temp file to avoid eval injection risk
+PROMPT_TMPFILE="$(mktemp "${TMPDIR:-/tmp}/gtm-prompt-${AGENT_NAME}.XXXXXX")"
+trap 'rm -f "$PROMPT_TMPFILE"; cleanup_lock' EXIT
+printf '%s' "$PROMPT" > "$PROMPT_TMPFILE"
+
+# Build Claude args array safely (no eval)
+CLAUDE_ARGS=(--print -p -)
+if [[ "$AUTO_MODE" == true ]]; then
+  CLAUDE_ARGS=(--allowedTools '*' "${CLAUDE_ARGS[@]}")
+fi
+
+# Run with 10-minute timeout to prevent hangs
+timeout 600 bash -c 'cat "$1" | claude "${@:2}"' -- "$PROMPT_TMPFILE" "${CLAUDE_ARGS[@]}"
 
 CLAUDE_EXIT=$?
+rm -f "$PROMPT_TMPFILE"
 echo "────────────────────────────────────────"
 
-if [[ $CLAUDE_EXIT -ne 0 ]]; then
-  echo "[run-agent] WARNING: Claude exited with code ${CLAUDE_EXIT}"
+if [[ $CLAUDE_EXIT -eq 124 ]]; then
+  _log "FATAL: Claude timed out after 600 seconds"
+  pc_heartbeat "$AGENT_NAME" "failed" "Agent timed out after 600s" 2>/dev/null || true
+elif [[ $CLAUDE_EXIT -ne 0 ]]; then
+  _log "WARNING: Claude exited with code ${CLAUDE_EXIT}"
   pc_heartbeat "$AGENT_NAME" "failed" "Agent exited with code ${CLAUDE_EXIT}" 2>/dev/null || true
 else
   pc_heartbeat "$AGENT_NAME" "succeeded" "Agent run completed successfully" 2>/dev/null || true
@@ -239,9 +284,9 @@ fi
 
 # ─── 8. Process outbound messages and sync state ──────────────────────────
 
-echo "[run-agent] Processing outbound messages..."
+_log " Processing outbound messages..."
 flush_outbound_queue "$AGENT_NAME" 2>/dev/null || {
-  echo "[run-agent] WARNING: Outbound message flush failed"
+  _log " WARNING: Outbound message flush failed"
 }
 
 # Send automatic task_complete to orchestrator
@@ -252,19 +297,18 @@ if [[ -n "${PROJECT_ID:-}" ]]; then
   fi
   COMPLETE_PAYLOAD="{\"agent\":\"${AGENT_NAME}\",\"status\":\"${RUN_STATUS}\",\"exit_code\":${CLAUDE_EXIT},\"timestamp\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
   send_message "$AGENT_NAME" "orchestrator" "task_complete" "$COMPLETE_PAYLOAD" 2>/dev/null || {
-    echo "[run-agent] WARNING: Failed to send task_complete to orchestrator"
+    _log " WARNING: Failed to send task_complete to orchestrator"
   }
 fi
 
-echo "[run-agent] Syncing state to Supabase..."
+_log " Syncing state to Supabase..."
 sync_all "$AGENT_NAME" 2>/dev/null || {
-  echo "[run-agent] WARNING: State sync failed (Supabase may not be configured)"
+  _log " WARNING: State sync failed (Supabase may not be configured)"
 }
 
 # ─── 9. Completion ─────────────────────────────────────────────────────────
 
 echo ""
-echo "========================================"
-echo " ${AGENT_NAME} run complete"
-echo " $(date)"
-echo "========================================"
+_log "========================================"
+_log " ${AGENT_NAME} run complete"
+_log "========================================"

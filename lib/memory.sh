@@ -12,11 +12,12 @@
 
 _sb_url() { echo "${SUPABASE_URL:?SUPABASE_URL not set}/rest/v1/$1"; }
 
-_sb_headers() {
-  echo -H "apikey: ${SUPABASE_ANON_KEY:?SUPABASE_ANON_KEY not set}"
-  echo -H "Authorization: Bearer ${SUPABASE_ANON_KEY}"
-  echo -H "Content-Type: application/json"
-  echo -H "Prefer: return=representation"
+# Retry wrapper: retries a command once after a 2-second sleep on failure
+_sb_retry() {
+  "$@" && return 0
+  echo "[memory.sh] Retrying after 2s..." >&2
+  sleep 2
+  "$@"
 }
 
 _sb_get() {
@@ -108,13 +109,21 @@ mem_set() {
   local confidence="${5:-0.8}" source="${6:-agent}"
   local now
   now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  # Detect if value is already valid JSON (starts with { or [) and skip wrapping
+  local json_value
+  if [[ "$value" == "{"* || "$value" == "["* ]] && echo "$value" | jq . &>/dev/null; then
+    json_value="$value"
+  else
+    json_value=$(echo "$value" | jq -R .)
+  fi
+
   local payload
   payload=$(cat <<EOF
 {
   "project_id": "${project_id}",
   "namespace": "${namespace}",
   "key": "${key}",
-  "value": $(echo "$value" | jq -R .),
+  "value": ${json_value},
   "confidence": ${confidence},
   "source": "${source}",
   "updated_at": "${now}"

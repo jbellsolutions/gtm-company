@@ -1,5 +1,14 @@
 'use client';
 
+// ─── Supabase Realtime Requirement ─────────────────────────────────────────
+// Ensure these tables have Realtime enabled:
+//   ALTER PUBLICATION supabase_realtime ADD TABLE agent_status;
+//   ALTER PUBLICATION supabase_realtime ADD TABLE agent_runs;
+//   ALTER PUBLICATION supabase_realtime ADD TABLE episodes;
+//   ALTER PUBLICATION supabase_realtime ADD TABLE contacts;
+//   ALTER PUBLICATION supabase_realtime ADD TABLE agent_messages;
+// ────────────────────────────────────────────────────────────────────────────
+
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 
@@ -7,31 +16,42 @@ import { supabase } from '../lib/supabase';
 
 interface AgentStatus {
   id: string;
-  agent_name: string;
+  project_id: string;
+  agent_id: string;
   status: 'running' | 'idle' | 'error' | 'disabled';
   last_run_at: string | null;
   next_run_at: string | null;
-  last_metric: string | null;
-  last_error: string | null;
+  last_run_status: string | null;
+  last_run_outputs: Record<string, any> | null;
+  error_message: string | null;
+  run_count: number;
+  consecutive_failures: number;
   updated_at: string;
 }
 
 interface AgentRun {
   id: string;
-  agent_name: string;
-  action: string;
-  outcome: string | null;
-  cost_usd: number | null;
+  project_id: string;
+  agent_id: string;
   started_at: string;
-  completed_at: string | null;
+  ended_at: string | null;
   status: string;
+  outputs: Record<string, any> | null;
+  token_usage: number | null;
+  cost_cents: number | null;
+  error: string | null;
+  created_at: string;
 }
 
 interface Episode {
   id: string;
-  agent_name: string;
+  project_id: string;
+  agent_id: string;
   event_type: string;
-  summary: string;
+  description: string;
+  outcome: string | null;
+  learnings: Record<string, any> | null;
+  data: Record<string, any> | null;
   created_at: string;
 }
 
@@ -42,11 +62,16 @@ interface PipelineStage {
 
 interface AgentMessage {
   id: string;
+  project_id: string;
   from_agent: string;
   to_agent: string;
   message_type: string;
-  content: string;
+  payload: Record<string, any> | null;
+  status: string;
+  priority: string;
   created_at: string;
+  processed_at: string | null;
+  processed_by: string | null;
 }
 
 interface WeeklyKPIs {
@@ -68,6 +93,8 @@ const AGENTS = [
   { name: 'lead-router', label: 'Lead Router', icon: 'R' },
   { name: 'content-strategist', label: 'Content Strategist', icon: 'C' },
   { name: 'weekly-strategist', label: 'Weekly Strategist', icon: 'W' },
+  { name: 'power-partnerships', label: 'Power Partnerships', icon: 'P' },
+  { name: 'content-engine', label: 'Content Engine', icon: 'N' },
 ];
 
 const PIPELINE_STAGES = [
@@ -102,9 +129,10 @@ function formatTime(dateStr: string | null): string {
   });
 }
 
-function formatCost(cost: number): string {
-  if (cost < 0.01) return '<$0.01';
-  return `$${cost.toFixed(2)}`;
+function formatCost(costCents: number): string {
+  const dollars = costCents / 100;
+  if (dollars < 0.01) return '<$0.01';
+  return `$${dollars.toFixed(2)}`;
 }
 
 function statusColor(status: string): string {
@@ -162,11 +190,11 @@ export default function Dashboard() {
   const fetchAgents = useCallback(async () => {
     const { data } = await supabase
       .from('agent_status')
-      .select('*')
-      .order('agent_name');
+      .select('id, project_id, agent_id, status, last_run_at, next_run_at, last_run_status, last_run_outputs, error_message, run_count, consecutive_failures, updated_at')
+      .order('agent_id');
     if (data) {
       setAgents(data);
-      const orch = data.find(a => a.agent_name === 'orchestrator');
+      const orch = data.find(a => a.agent_id === 'orchestrator');
       if (orch) setLastHeartbeat(orch.updated_at);
     }
   }, []);
@@ -174,12 +202,12 @@ export default function Dashboard() {
   const fetchPipeline = useCallback(async () => {
     const { data } = await supabase
       .from('contacts')
-      .select('pipeline_stage');
+      .select('status');
     if (data) {
       const counts: Record<string, number> = {};
       PIPELINE_STAGES.forEach(s => counts[s.key] = 0);
-      data.forEach((row: { pipeline_stage: string }) => {
-        const stage = row.pipeline_stage?.toLowerCase().replace(/\s+/g, '_');
+      data.forEach((row: { status: string }) => {
+        const stage = row.status?.toLowerCase().replace(/\s+/g, '_');
         if (stage && counts[stage] !== undefined) counts[stage]++;
       });
       setPipeline(PIPELINE_STAGES.map(s => ({ stage: s.key, count: counts[s.key] || 0 })));
@@ -190,34 +218,44 @@ export default function Dashboard() {
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
     const [runsRes, contactsRes] = await Promise.all([
-      supabase.from('agent_runs').select('agent_name, action, cost_usd, status').gte('started_at', weekAgo),
-      supabase.from('contacts').select('pipeline_stage, replied_at, meeting_booked_at').gte('updated_at', weekAgo),
+      supabase.from('agent_runs').select('agent_id, outputs, cost_cents, status').gte('created_at', weekAgo),
+      supabase.from('contacts').select('status').gte('updated_at', weekAgo),
     ]);
 
     const runs = runsRes.data || [];
     const contacts = contactsRes.data || [];
 
-    const emailsDrafted = runs.filter(r => r.action?.includes('email') || r.action?.includes('draft')).length;
-    const linkedinPosts = runs.filter(r => r.action?.includes('linkedin') || r.action?.includes('post')).length;
-    const repliesReceived = contacts.filter(c => c.replied_at).length;
-    const meetingsBooked = contacts.filter(c => c.meeting_booked_at).length;
-    const totalCost = runs.reduce((sum, r) => sum + (r.cost_usd || 0), 0);
-    const leads = contacts.filter(c => ['qualified', 'meeting_booked', 'customer'].includes(c.pipeline_stage?.toLowerCase().replace(/\s+/g, '_') || '')).length;
+    // Derive KPIs from agent_runs outputs jsonb
+    let emailsDrafted = 0;
+    let linkedinPosts = 0;
+    let repliesProcessed = 0;
+    let meetingsBooked = 0;
+
+    runs.forEach((r: any) => {
+      const out = r.outputs || {};
+      emailsDrafted += out.emails_drafted || 0;
+      linkedinPosts += out.linkedin_posts || out.posts_created || 0;
+      repliesProcessed += out.replies_processed || out.replies_received || 0;
+      meetingsBooked += out.meetings_booked || 0;
+    });
+
+    const totalCostCents = runs.reduce((sum: number, r: any) => sum + (r.cost_cents || 0), 0);
+    const leads = contacts.filter((c: any) => ['qualified', 'meeting_booked', 'customer'].includes(c.status?.toLowerCase().replace(/\s+/g, '_') || '')).length;
 
     setKpis({
       emails_drafted: emailsDrafted,
-      replies_received: repliesReceived,
+      replies_received: repliesProcessed,
       linkedin_posts: linkedinPosts,
       engagement: 0,
       meetings_booked: meetingsBooked,
-      cost_this_week: totalCost,
-      cost_per_lead: leads > 0 ? totalCost / leads : 0,
+      cost_this_week: totalCostCents,
+      cost_per_lead: leads > 0 ? totalCostCents / leads : 0,
     });
   }, []);
 
   const fetchActivity = useCallback(async () => {
     const [runsRes, episodesRes] = await Promise.all([
-      supabase.from('agent_runs').select('*').order('started_at', { ascending: false }).limit(15),
+      supabase.from('agent_runs').select('*').order('created_at', { ascending: false }).limit(15),
       supabase.from('episodes').select('*').order('created_at', { ascending: false }).limit(15),
     ]);
 
@@ -225,8 +263,8 @@ export default function Dashboard() {
     const episodes = (episodesRes.data || []).map(e => ({ ...e, _type: 'episode' }));
     const combined = [...runs, ...episodes]
       .sort((a, b) => {
-        const aTime = ('started_at' in a ? a.started_at : a.created_at) || '';
-        const bTime = ('started_at' in b ? b.started_at : b.created_at) || '';
+        const aTime = a.created_at || '';
+        const bTime = b.created_at || '';
         return new Date(bTime).getTime() - new Date(aTime).getTime();
       })
       .slice(0, 20);
@@ -308,10 +346,13 @@ export default function Dashboard() {
     if (!chatInput.trim() || sending) return;
     setSending(true);
     await supabase.from('agent_messages').insert({
+      project_id: 'ai-integrators-gtm',
       from_agent: 'user',
       to_agent: 'orchestrator',
       message_type: 'instruction',
-      content: chatInput.trim(),
+      payload: { text: chatInput.trim() },
+      status: 'unread',
+      priority: 'normal',
     });
     setChatInput('');
     setSending(false);
@@ -404,7 +445,7 @@ export default function Dashboard() {
             gap: 12,
           }}>
             {AGENTS.map(agentDef => {
-              const agent = agents.find(a => a.agent_name === agentDef.name);
+              const agent = agents.find(a => a.agent_id === agentDef.name);
               const status = agent?.status || 'idle';
               const isOrchestrator = agentDef.name === 'orchestrator';
 
@@ -458,7 +499,13 @@ export default function Dashboard() {
                       <span style={{ color: 'var(--text-muted)' }}>Next run</span>
                       <span style={{ color: 'var(--text-secondary)' }}>{agent?.next_run_at ? formatTime(agent.next_run_at) : '--'}</span>
                     </div>
-                    {agent?.last_metric && (
+                    {agent?.last_run_status && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+                        <span style={{ color: 'var(--text-muted)' }}>Runs</span>
+                        <span style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{agent.run_count || 0}</span>
+                      </div>
+                    )}
+                    {agent?.last_run_outputs && (
                       <div style={{
                         marginTop: 4, padding: '4px 8px',
                         background: 'var(--bg-input)', borderRadius: 4,
@@ -466,17 +513,17 @@ export default function Dashboard() {
                         fontFamily: 'var(--font-mono)',
                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                       }}>
-                        {agent.last_metric}
+                        {Object.entries(agent.last_run_outputs).map(([k, v]) => `${k}: ${v}`).join(', ')}
                       </div>
                     )}
-                    {agent?.last_error && (
+                    {agent?.error_message && (
                       <div style={{
                         marginTop: 4, padding: '4px 8px',
                         background: 'var(--accent-red-dim)', borderRadius: 4,
                         fontSize: 11, color: 'var(--accent-red)',
                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                       }}>
-                        {agent.last_error}
+                        {agent.error_message}
                       </div>
                     )}
                   </div>
@@ -621,14 +668,14 @@ export default function Dashboard() {
             )}
             {activity.map((item, i) => {
               const isRun = '_type' in item && (item as any)._type === 'run';
-              const timestamp = isRun ? (item as any).started_at : (item as any).created_at;
-              const agentName = (item as any).agent_name || 'system';
+              const timestamp = (item as any).created_at;
+              const agentName = (item as any).agent_id || 'system';
               const actionText = isRun
-                ? `${(item as any).action || 'run'}`
+                ? `${(item as any).status || 'run'}${(item as any).cost_cents ? ` ($${((item as any).cost_cents / 100).toFixed(2)})` : ''}`
                 : `${(item as any).event_type || 'event'}`;
               const outcome = isRun
-                ? ((item as any).outcome || (item as any).status || '')
-                : ((item as any).summary || '');
+                ? ((item as any).outputs ? Object.entries((item as any).outputs).map(([k, v]) => `${k}: ${v}`).join(', ') : (item as any).status || '')
+                : ((item as any).description || '');
 
               return (
                 <div key={`${i}-${(item as any).id}`} style={{
@@ -737,7 +784,7 @@ export default function Dashboard() {
                     color: isUser ? 'white' : 'var(--text-primary)',
                     border: isUser ? 'none' : '1px solid var(--border)',
                   }}>
-                    {msg.content}
+                    {msg.payload?.text || msg.payload?.summary || (msg.payload ? JSON.stringify(msg.payload) : '[no content]')}
                   </div>
                 </div>
               );

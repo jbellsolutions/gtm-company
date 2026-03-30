@@ -1,8 +1,34 @@
-# GTM Company — Autonomous Go-To-Market Machine
+# GTM Company -- Autonomous Go-To-Market Machine
 
 An integrated go-to-market operation that runs cold email outreach, LinkedIn engagement, content strategy, and lead routing autonomously using AI agents powered by Claude Code + MCP integrations.
 
 Built for **AI Integrators** (UsingAIToScale.com) as an internal GTM system and the first working example for the Expert Series product.
+
+---
+
+## For Clients
+
+New here? Start with these:
+
+1. **[CLIENT-REQUIREMENTS.md](CLIENT-REQUIREMENTS.md)** -- Checklist of everything you need before installation (accounts, business info, technical requirements)
+2. **[SETUP.md](SETUP.md)** -- Complete step-by-step installation guide (30-60 minutes)
+
+---
+
+## Running Costs
+
+| Component | Monthly Cost | Required? |
+|-----------|-------------|-----------|
+| Anthropic API (Claude) | $50-200 | Yes |
+| VPS (DigitalOcean 2GB) | $12 | Yes |
+| SmartLead (email sending) | $39 | No (recommended) |
+| Firecrawl (web scraping) | $0 (free tier) | No |
+| Gmail | $0 | Yes |
+| Cal.com / Calendly | $0 (free tier) | Yes |
+| **Minimum total** | **~$62/mo** | |
+| **Full setup** | **~$200-400/mo** | |
+
+---
 
 ## What It Does
 
@@ -60,13 +86,30 @@ cp .env.example .env
 
 ## Scaffold a New Project From This Template
 
+This repo is designed to be reused for multiple businesses. Each client gets their own project with isolated state, database, and configuration.
+
 ```bash
 # Create a new GTM operation for a different business
 ./scaffold.sh gtm-outbound acme-corp-gtm
 
-# Or with a config file
+# Or with a config file pre-filled with client details
 ./scaffold.sh gtm-outbound acme-corp-gtm --config /path/to/config.json
 ```
+
+**How the template system works:**
+
+1. `templates/` contains template manifests (e.g., `gtm-outbound.json`) defining which agents, configs, and scripts to include
+2. `scaffold.sh` copies the template into a new directory, replaces placeholder values with the new project name, and generates a fresh `.env.example`
+3. The new project gets its own `config/project.json` to customize with client business details
+4. Each project uses its own Supabase project for data isolation
+5. State files in `state/` are per-agent and per-project -- they never overlap
+
+**To onboard a new client:**
+
+1. Run `./scaffold.sh gtm-outbound client-name-gtm`
+2. Edit the new `config/project.json` with their business details (see [CLIENT-REQUIREMENTS.md](CLIENT-REQUIREMENTS.md) for what to gather)
+3. Set up their Supabase project and fill in `.env`
+4. Deploy to their VPS following [SETUP.md](SETUP.md)
 
 ## Key Design Principles
 

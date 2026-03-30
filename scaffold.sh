@@ -320,9 +320,33 @@ jq -n \
 
 ok "Generated project.json"
 
-# Also write schedules.json for trigger setup
-echo "$SCHEDULES_JSON" | jq '.' > "$PROJECT_DIR/config/schedules.json"
-ok "Generated config/schedules.json"
+# Write schedules.json in the format autopilot.sh expects:
+# { "agents": { "<id>": { "cron": "...", "description": "...", "priority": "...", "auto_mode": true/false } } }
+AUTOPILOT_SCHEDULES="{}"
+for i in $(seq 0 $((AGENT_COUNT - 1))); do
+  AID=$(jq -r ".agents[$i].id" "$TEMPLATE_FILE")
+  ASCHED=$(jq -r ".agents[$i].schedule" "$TEMPLATE_FILE")
+  ADESC=$(jq -r ".agents[$i].description // empty" "$TEMPLATE_FILE")
+  APRI=$(jq -r ".agents[$i].priority // \"medium\"" "$TEMPLATE_FILE")
+  AAUTO=$(jq -r ".agents[$i].auto_mode" "$TEMPLATE_FILE")
+  AFOLLOWUP=$(jq -r ".agents[$i].cron_followup // empty" "$TEMPLATE_FILE")
+
+  AGENT_OBJ=$(jq -n \
+    --arg cron "$ASCHED" \
+    --arg desc "$ADESC" \
+    --arg pri "$APRI" \
+    --argjson auto "$AAUTO" \
+    '{cron: $cron, description: $desc, priority: $pri, auto_mode: $auto}')
+
+  if [[ -n "$AFOLLOWUP" ]]; then
+    AGENT_OBJ=$(echo "$AGENT_OBJ" | jq --arg cf "$AFOLLOWUP" '. + {cron_followup: $cf}')
+  fi
+
+  AUTOPILOT_SCHEDULES=$(echo "$AUTOPILOT_SCHEDULES" | jq --arg id "$AID" --argjson obj "$AGENT_OBJ" '.[$id] = $obj')
+done
+
+jq -n --argjson agents "$AUTOPILOT_SCHEDULES" '{agents: $agents}' > "$PROJECT_DIR/config/schedules.json"
+ok "Generated config/schedules.json (autopilot.sh format)"
 
 # ──────────────────────────────────────────────
 # Step 6: Initialize state directories
@@ -379,12 +403,12 @@ if [ ! -f "$PROJECT_DIR/.env" ]; then
   cp "$PROJECT_DIR/.env.example" "$PROJECT_DIR/.env"
   # Substitute known values
   if [ -n "${CONFIG_VALUES[booking_link]:-}" ]; then
-    sed -i '' "s|BOOKING_LINK=.*|BOOKING_LINK=${CONFIG_VALUES[booking_link]}|" "$PROJECT_DIR/.env" 2>/dev/null || true
+    sed -i.bak "s|BOOKING_LINK=.*|BOOKING_LINK=${CONFIG_VALUES[booking_link]}|" "$PROJECT_DIR/.env" && rm -f "$PROJECT_DIR/.env.bak"
   fi
   if [ -n "${CONFIG_VALUES[slack_channel]:-}" ]; then
-    sed -i '' "s|SLACK_CHANNEL=.*|SLACK_CHANNEL=${CONFIG_VALUES[slack_channel]}|" "$PROJECT_DIR/.env" 2>/dev/null || true
+    sed -i.bak "s|SLACK_CHANNEL=.*|SLACK_CHANNEL=${CONFIG_VALUES[slack_channel]}|" "$PROJECT_DIR/.env" && rm -f "$PROJECT_DIR/.env.bak"
   fi
-  sed -i '' "s|PROJECT_ID=.*|PROJECT_ID=$PROJECT_NAME|" "$PROJECT_DIR/.env" 2>/dev/null || true
+  sed -i.bak "s|PROJECT_ID=.*|PROJECT_ID=$PROJECT_NAME|" "$PROJECT_DIR/.env" && rm -f "$PROJECT_DIR/.env.bak"
   ok "Created .env (edit with your credentials)"
 else
   ok ".env already exists, skipping"
@@ -395,7 +419,7 @@ fi
 # ──────────────────────────────────────────────
 step "Step 8: Copying library files"
 
-for LIB_FILE in memory.sh sync-state.sh run-agent.sh setup-supabase.sh supabase-migration.sql; do
+for LIB_FILE in memory.sh sync-state.sh run-agent.sh setup-supabase.sh agent-comms.sh paperclip.sh autopilot.sh supabase-migration.sql supabase-migration-v2.sql; do
   if [ -f "$LIB_DIR/$LIB_FILE" ]; then
     cp "$LIB_DIR/$LIB_FILE" "$PROJECT_DIR/lib/"
     ok "Copied lib/$LIB_FILE"
@@ -403,6 +427,59 @@ for LIB_FILE in memory.sh sync-state.sh run-agent.sh setup-supabase.sh supabase-
     warn "lib/$LIB_FILE not found in source (skipping)"
   fi
 done
+
+# Generate .claude/CLAUDE.md for the scaffolded project
+step "Step 8b: Generating .claude/CLAUDE.md"
+
+mkdir -p "$PROJECT_DIR/.claude"
+cat > "$PROJECT_DIR/.claude/CLAUDE.md" <<CLAUDEMD
+# ${PROJECT_NAME} — Claude Code Instructions
+
+## Identity
+This is an autonomous GTM operations hub scaffolded from the ${TEMPLATE_ID} template.
+Claude Code is the operations runtime — it executes agent playbooks via MCP integrations.
+
+## Architecture Rules
+- NEVER delete state files — they are the memory between sessions
+- NEVER auto-send emails — all outbound is Gmail DRAFTS (human approval required)
+- NEVER modify production workflows without explicit approval
+- ALWAYS read the playbook before executing any agent run
+- ALWAYS write state files at the end of every run
+- ALWAYS report to Slack after every run
+
+## Agent Execution Pattern
+Every agent run follows this exact sequence:
+1. Read playbook: agents/{agent_id}.md
+2. Read state: state/{agent_id}/last-run.json
+3. Read config: config/schedules.json
+4. Check external systems (ClickUp, Gmail, Slack)
+5. Execute ops per playbook checklist
+6. Write state files
+7. Post summary to Slack
+8. Exit
+
+## Available Agents
+$(for i in $(seq 0 $((AGENT_COUNT - 1))); do
+  AID=$(jq -r ".agents[$i].id" "$TEMPLATE_FILE")
+  ADESC=$(jq -r ".agents[$i].description // empty" "$TEMPLATE_FILE")
+  echo "- ${AID}: ${ADESC}"
+done)
+
+## Key Files
+- project.json — Project configuration and agent registry
+- config/schedules.json — All agent cron schedules
+- .env — Environment variables (secrets, API keys)
+- lib/run-agent.sh — Agent execution wrapper
+- lib/memory.sh — Supabase memory layer
+- lib/agent-comms.sh — Inter-agent communication
+- lib/autopilot.sh — Auto-scheduling daemon
+
+## Constraints
+- All emails are DRAFTS (human approval required)
+- State stored as JSON files on disk
+- Claude Code sessions are ephemeral — state files bridge sessions
+CLAUDEMD
+ok "Generated .claude/CLAUDE.md"
 
 # Copy dashboards
 if [ -d "$SCRIPT_DIR/dashboards" ]; then

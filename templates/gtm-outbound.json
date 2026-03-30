@@ -1,13 +1,15 @@
 {
   "template_id": "gtm-outbound",
   "name": "Go-To-Market Outbound",
-  "version": "1.0.0",
-  "description": "Cold email + LinkedIn + content strategy GTM machine",
+  "version": "2.0.0",
+  "description": "Cold email + LinkedIn + content strategy GTM machine with 8 autonomous agents",
   "agents": [
     {
       "id": "cold-outreach",
       "playbook": "agents/cold-outreach.md",
       "schedule": "7 */2 * * *",
+      "description": "Every 2 hours at :07",
+      "priority": "high",
       "tools": ["gmail", "firecrawl", "clickup"],
       "auto_mode": true
     },
@@ -15,6 +17,8 @@
       "id": "linkedin-engage",
       "playbook": "agents/linkedin-engage.md",
       "schedule": "23 8,12,16 * * *",
+      "description": "3x daily (8:23am, 12:23pm, 4:23pm)",
+      "priority": "high",
       "tools": ["browser", "slack"],
       "auto_mode": true
     },
@@ -22,6 +26,8 @@
       "id": "lead-router",
       "playbook": "agents/lead-router.md",
       "schedule": "37 */2 * * *",
+      "description": "Every 2 hours at :37 (30min after outreach)",
+      "priority": "medium",
       "tools": ["slack"],
       "auto_mode": true
     },
@@ -29,6 +35,8 @@
       "id": "content-strategist",
       "playbook": "agents/content-strategist.md",
       "schedule": "0 9 * * 1",
+      "description": "Monday 9am",
+      "priority": "medium",
       "tools": ["slack", "notion"],
       "auto_mode": false
     },
@@ -36,8 +44,38 @@
       "id": "weekly-strategist",
       "playbook": "agents/weekly-strategist.md",
       "schedule": "0 20 * * 0",
+      "description": "Sunday 8pm",
+      "priority": "high",
       "tools": ["slack"],
       "auto_mode": false
+    },
+    {
+      "id": "power-partnerships",
+      "playbook": "agents/power-partnerships.md",
+      "schedule": "0 10 * * 3",
+      "cron_followup": "0 14 * * 5",
+      "description": "Wednesday 10am (research), Friday 2pm (follow-up)",
+      "priority": "medium",
+      "tools": ["gmail", "firecrawl", "slack"],
+      "auto_mode": false
+    },
+    {
+      "id": "content-engine",
+      "playbook": "agents/content-engine.md",
+      "schedule": "0 9 * * 2,4",
+      "description": "Tuesday and Thursday 9am",
+      "priority": "medium",
+      "tools": ["slack", "notion"],
+      "auto_mode": false
+    },
+    {
+      "id": "orchestrator",
+      "playbook": "agents/orchestrator.md",
+      "schedule": "*/30 * * * *",
+      "description": "Every 30 minutes (heartbeat)",
+      "priority": "critical",
+      "tools": ["slack", "clickup"],
+      "auto_mode": true
     }
   ],
   "config_vars": [
@@ -94,8 +132,11 @@
       "cold-outreach",
       "linkedin-engage",
       "lead-router",
+      "content-strategist",
       "weekly-strategist",
-      "content-strategist"
+      "power-partnerships",
+      "content-engine",
+      "orchestrator"
     ],
     "default_files": {
       "last-run.json": {
@@ -113,6 +154,8 @@
     "agent_runs",
     "memories",
     "contacts",
-    "episodes"
+    "episodes",
+    "agent_messages",
+    "agent_status"
   ]
 }

@@ -164,6 +164,19 @@ $(cron_to_launchd_interval "$cron")
     <dict>
         <key>PATH</key>
         <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin:${HOME}/.local/bin</string>
+$(if [[ -f "$PROJECT_ROOT/.env" ]]; then
+  while IFS='=' read -r k v; do
+    # Skip comments and empty lines
+    [[ -z "$k" || "$k" == \#* ]] && continue
+    # Strip quotes from value
+    v="${v%\"}"
+    v="${v#\"}"
+    v="${v%\'}"
+    v="${v#\'}"
+    echo "        <key>${k}</key>"
+    echo "        <string>${v}</string>"
+  done < "$PROJECT_ROOT/.env"
+fi)
     </dict>
 </dict>
 </plist>
@@ -172,6 +185,55 @@ PLIST
     launchctl unload "$plist_file" 2>/dev/null || true
     launchctl load "$plist_file"
     echo "[autopilot] Loaded: ${label} (${cron})"
+
+    # Handle cron_followup: create a second schedule entry if defined
+    local cron_followup
+    cron_followup=$(jq -r ".agents[\"${agent}\"].cron_followup // empty" "$SCHEDULES_FILE" 2>/dev/null)
+    if [[ -n "$cron_followup" ]]; then
+      local followup_label="com.gtm-company.${agent}-followup"
+      local followup_plist="${PLIST_DIR}/${followup_label}.plist"
+
+      cat > "$followup_plist" <<FPLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${followup_label}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${PROJECT_ROOT}/lib/run-agent.sh</string>
+        <string>${agent}</string>
+$(if [[ -n "$auto_flag" ]]; then echo "        <string>${auto_flag}</string>"; fi)
+    </array>
+    <key>WorkingDirectory</key>
+    <string>${PROJECT_ROOT}</string>
+$(cron_to_launchd_interval "$cron_followup")
+    <key>StandardOutPath</key>
+    <string>${log_file}</string>
+    <key>StandardErrorPath</key>
+    <string>${log_file}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin:${HOME}/.local/bin</string>
+$(if [[ -f "$PROJECT_ROOT/.env" ]]; then
+  while IFS='=' read -r k v; do
+    [[ -z "$k" || "$k" == \#* ]] && continue
+    v="${v%\"}" ; v="${v#\"}" ; v="${v%\'}" ; v="${v#\'}"
+    echo "        <key>${k}</key>"
+    echo "        <string>${v}</string>"
+  done < "$PROJECT_ROOT/.env"
+fi)
+    </dict>
+</dict>
+</plist>
+FPLIST
+
+      launchctl unload "$followup_plist" 2>/dev/null || true
+      launchctl load "$followup_plist"
+      echo "[autopilot] Loaded followup: ${followup_label} (${cron_followup})"
+    fi
   done
 }
 
@@ -183,6 +245,34 @@ launchd_uninstall() {
       launchctl unload "$plist_file" 2>/dev/null || true
       rm -f "$plist_file"
       echo "[autopilot] Unloaded: ${label}"
+    fi
+    # Also unload followup schedule if present
+    local followup_label="com.gtm-company.${agent}-followup"
+    local followup_plist="${PLIST_DIR}/${followup_label}.plist"
+    if [[ -f "$followup_plist" ]]; then
+      launchctl unload "$followup_plist" 2>/dev/null || true
+      rm -f "$followup_plist"
+      echo "[autopilot] Unloaded followup: ${followup_label}"
+    fi
+  done
+}
+
+# ─── Log rotation ──────────────────────────────────────────────────────────
+# Truncate log files over 10MB to prevent disk bloat
+# Usage: rotate_logs
+rotate_logs() {
+  local max_bytes=$((10 * 1024 * 1024))  # 10MB
+  for log_file in "$LOG_DIR"/*.log; do
+    [[ -f "$log_file" ]] || continue
+    local size
+    size=$(stat -f%z "$log_file" 2>/dev/null || stat -c%s "$log_file" 2>/dev/null || echo 0)
+    if [[ "$size" -gt "$max_bytes" ]]; then
+      echo "[autopilot] Rotating $(basename "$log_file") (${size} bytes > 10MB)"
+      local archive="${log_file}.$(date +%Y%m%d-%H%M%S).bak"
+      mv "$log_file" "$archive"
+      gzip "$archive" 2>/dev/null || true
+      touch "$log_file"
+      echo "[autopilot] Rotated: $(basename "$log_file")"
     fi
   done
 }
