@@ -80,3 +80,72 @@ html, body {
   from { transform: translateX(0); }
   to { transform: translateX(100%); }
 }
+
+/* ─── Responsive: Default (desktop > 1024px) ──────────────────────────────── */
+
+.middle-grid {
+  grid-template-columns: 1fr 1fr;
+}
+
+/* ─── Responsive: Tablet (768px - 1024px) ──────────────────────────────────── */
+
+@media (max-width: 1024px) and (min-width: 768px) {
+  .middle-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .chat-sidebar {
+    width: 200px !important;
+  }
+}
+
+/* ─── Responsive: Mobile (< 768px) ─────────────────────────────────────────── */
+
+@media (max-width: 767px) {
+  html, body {
+    font-size: 13px;
+  }
+
+  /* Agent status grid: single column */
+  /* Uses auto-fill minmax so it naturally collapses, but force single col */
+
+  .middle-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Chat sidebar: collapse */
+  .chat-layout {
+    flex-direction: column !important;
+  }
+
+  .chat-sidebar {
+    width: 100% !important;
+    max-height: 180px !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--border) !important;
+    overflow-y: auto;
+  }
+
+  /* Reduce padding globally */
+  main {
+    padding: 12px !important;
+  }
+
+  header {
+    padding: 12px 16px !important;
+  }
+
+  nav {
+    padding: 0 12px !important;
+  }
+
+  /* Stack header items */
+  header > div {
+    gap: 8px !important;
+  }
+
+  /* Hide heartbeat text on mobile to save space */
+  header .header-meta {
+    display: none;
+  }
+}

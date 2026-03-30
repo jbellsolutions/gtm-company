@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useAuth } from '../lib/auth';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Dashboard' },
@@ -10,6 +11,10 @@ const NAV_ITEMS = [
 
 export function NavBar() {
   const pathname = usePathname();
+  const { user, signOut } = useAuth();
+
+  // Don't show nav on login page
+  if (pathname === '/login') return null;
 
   return (
     <nav style={{
@@ -73,6 +78,32 @@ export function NavBar() {
           </Link>
         );
       })}
+
+      {/* Spacer + Sign Out */}
+      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
+        {user && (
+          <>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              {user.email}
+            </span>
+            <button
+              onClick={signOut}
+              style={{
+                background: 'transparent',
+                border: '1px solid var(--border)',
+                borderRadius: 6,
+                padding: '4px 10px',
+                fontSize: 11,
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              Sign Out
+            </button>
+          </>
+        )}
+      </div>
     </nav>
   );
 }

@@ -191,9 +191,9 @@ export default function ChatPage() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ display: 'flex', height: '100vh', background: 'var(--bg-primary)' }}>
+    <div className="chat-layout" style={{ display: 'flex', height: '100vh', background: 'var(--bg-primary)' }}>
       {/* ── Left Sidebar: Agent List ─────────────────────────────────────── */}
-      <aside style={{
+      <aside className="chat-sidebar" style={{
         width: 240,
         borderRight: '1px solid var(--border)',
         display: 'flex',

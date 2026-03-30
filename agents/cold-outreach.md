@@ -120,6 +120,22 @@ Every 2 hours during business hours (8am-8pm ET). Triggered by cron or manual `/
 - **If Gmail MCP fails**, skip reply processing and only do new outreach. Log the failure.
 - **If Supabase is unreachable**, abort the run entirely and log the error locally to `state/cold-outreach/errors.log`.
 
+### CAN-SPAM Compliance
+All email drafts MUST comply with the CAN-SPAM Act (15 U.S.C. 7701-7713). Violations carry penalties of up to $51,744 per email.
+
+1. **Unsubscribe mechanism (REQUIRED):** Every email draft MUST include an unsubscribe option in the footer. Use: `Reply STOP to unsubscribe` — or a proper unsubscribe link when available.
+2. **Physical mailing address (REQUIRED):** Every email draft MUST include the sender's physical mailing address in the footer. Use the `{{PHYSICAL_ADDRESS}}` placeholder from `config/project.json` — this MUST be replaced with a real address before any email is sent.
+3. **Honest subject lines (REQUIRED):** Subject lines MUST NOT be deceptive or misleading. The subject must accurately reflect the content of the email body.
+4. **Accurate sender identity (REQUIRED):** The "From" name and email address MUST accurately identify the person or business sending the message. Never spoof or misrepresent the sender.
+5. **Do-not-contact check (REQUIRED):** Before drafting any email to a prospect, query the Supabase `contacts` table to verify the prospect does NOT have `status = 'do_not_contact'`. If they do, skip them entirely and log the skip.
+6. **Email footer template:** Every draft MUST end with:
+   ```
+   ---
+   {{SENDER_NAME}} | {{COMPANY_NAME}}
+   {{PHYSICAL_ADDRESS}}
+   Reply STOP to unsubscribe
+   ```
+
 ## Memory Integration
 
 ### Reads From Supabase

@@ -65,5 +65,17 @@
   },
   "comms_channel": "agent_messages",
   "expert_series_mode": true,
-  "documentation_enabled": true
+  "documentation_enabled": true,
+  "compliance": {
+    "can_spam": {
+      "physical_address": "{{PHYSICAL_ADDRESS}}",
+      "sender_name": "Justin Bellware",
+      "company_name": "AI Integrators (UsingAIToScale.com)",
+      "unsubscribe_method": "reply_stop",
+      "notes": "Replace {{PHYSICAL_ADDRESS}} with your real business mailing address before sending any emails. CAN-SPAM requires a valid physical postal address in every commercial email."
+    },
+    "do_not_contact_field": "status",
+    "do_not_contact_value": "do_not_contact",
+    "do_not_contact_table": "contacts"
+  }
 }

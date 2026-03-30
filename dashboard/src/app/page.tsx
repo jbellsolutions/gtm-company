@@ -11,6 +11,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../lib/auth';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -170,6 +171,7 @@ function overallHealth(agents: AgentStatus[]): 'green' | 'yellow' | 'red' {
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function Dashboard() {
+  const { signOut } = useAuth();
   const [agents, setAgents] = useState<AgentStatus[]>([]);
   const [pipeline, setPipeline] = useState<PipelineStage[]>([]);
   const [kpis, setKpis] = useState<WeeklyKPIs>({
@@ -428,6 +430,22 @@ export default function Dashboard() {
           >
             Orchestrator Chat
           </button>
+          <button
+            onClick={signOut}
+            style={{
+              background: 'transparent',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius)',
+              padding: '6px 14px',
+              fontSize: 12,
+              fontWeight: 500,
+              color: 'var(--text-secondary)',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            Sign Out
+          </button>
         </div>
       </header>
 
@@ -534,7 +552,7 @@ export default function Dashboard() {
         </section>
 
         {/* ── Middle Section: Pipeline + KPIs ─────────────────────────────── */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
+        <div className="middle-grid" style={{ display: 'grid', gap: 16, marginBottom: 24 }}>
 
           {/* Pipeline Funnel */}
           <section style={{
