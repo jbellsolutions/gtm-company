@@ -143,3 +143,14 @@ Triggered by cron or manual `/linkedin-engage` with optional `--run morning|midd
 - `contacts` — new warm lead records, updated touch counts
 - `episodes` — warm lead detection events with full engagement context
 - `agent_runs` — run log per run type (morning/midday/afternoon)
+
+## Inter-Agent Communication
+
+### Messages Sent
+- **On run completion:** Sends `task_complete` to orchestrator with run stats (run_type, posts_published, comments_made, leads_detected, engagement_received)
+- **When a warm lead is detected:** Sends `lead_found` to lead-router with the prospect's LinkedIn profile URL, engagement history, ICP match score, and detection reason so lead-router can route immediately
+- **When a high-profile prospect engages:** Sends `escalation` to orchestrator with priority `high` when a prospect matching high-value criteria (recognized brand, >$5M revenue signals, C-suite title) comments on or shares our content. Include the prospect details and engagement context
+
+### Messages Received
+- **`instruction` from orchestrator:** May include directives like "engage more with insurance vertical", "avoid commenting on competitor posts", "focus midday engagement on specific accounts". Apply to the relevant run type
+- **`strategy_update` broadcast:** New content calendar from content-strategist or new directives from weekly-strategist. Morning run should check for updated content briefs before creating posts

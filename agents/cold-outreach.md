@@ -135,3 +135,14 @@ Every 2 hours during business hours (8am-8pm ET). Triggered by cron or manual `/
 - `contacts` — new prospect records with source, status, first_touch date
 - `agent_runs` — run log with metrics, duration, errors
 - `episodes` — each reply classified as a learning event (what subject line triggered what response)
+
+## Inter-Agent Communication
+
+### Messages Sent
+- **On run completion:** Sends `task_complete` to orchestrator with run stats (emails_drafted, replies_processed, meetings_booked, daily_quota_usage)
+- **When a hot lead is found:** Sends `lead_found` to lead-router with contact details, reply content, and warmth signals so lead-router can make an immediate routing decision
+- **When a reply can't be handled:** Sends `escalation` to orchestrator with the contact info, reply content, and reason (e.g., hostile reply, legal threat, competitor inquiry, request outside our offer scope). Priority `high` for hostile or legal, `normal` otherwise
+
+### Messages Received
+- **`instruction` from orchestrator:** May include directives like "pause outreach to vertical X", "prioritize staffing agencies", "skip prospect Y". Check inbound instructions before starting Phase 3 (New Outreach) and adjust targeting accordingly
+- **`strategy_update` broadcast:** New email angles or positioning changes from content-strategist or weekly-strategist. Incorporate into next run's outreach templates

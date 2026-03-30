@@ -219,3 +219,13 @@ Weekly, Sunday at 8:00 PM ET. Runs before Monday's content-strategist so its out
 ### Writes To Supabase
 - `episodes` — weekly strategy review event with full analysis context
 - `agent_runs` — run log with metrics_analyzed count and strategy_changes count
+
+## Inter-Agent Communication
+
+### Messages Sent
+- **On run completion:** Sends `strategy_update` broadcast to ALL agents with new directives, updated channel weights, ICP refinements, and the `do_not_do` list. This is the most important broadcast of the week — it sets the direction for all agents for the next 7 days
+- **On run completion:** Also sends `task_complete` to orchestrator with the weekly report summary (key_metrics, trends, recommendation_count, strategy_changes_count). The orchestrator uses this for the Monday morning review with Justin
+
+### Messages Received
+- **`instruction` from orchestrator:** May include directives like "Justin wants to focus on staffing agencies exclusively next week", "pause all outreach for 48 hours", "adjust channel weights to favor LinkedIn". Apply these as overrides in Phase 4 (Generate Strategy Recommendations)
+- **`task_complete` from all agents:** While weekly-strategist reads agent_runs from Supabase directly, it may also receive task_complete messages with real-time stats that supplement the database queries

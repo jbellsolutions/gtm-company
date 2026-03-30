@@ -32,10 +32,11 @@ echo " GTM Agent Runner: ${AGENT_NAME}"
 echo " $(date)"
 echo "========================================"
 
-# ─── 1. Source memory layer ────────────────────────────────────────────────
+# ─── 1. Source memory layer and comms layer ───────────────────────────────
 
 source "$SCRIPT_DIR/memory.sh"
 source "$SCRIPT_DIR/sync-state.sh"
+source "$SCRIPT_DIR/agent-comms.sh"
 
 # Load env if .env exists
 if [[ -f "$PROJECT_ROOT/.env" ]]; then
@@ -180,6 +181,41 @@ PROMPTEOF
 
 echo "[run-agent] Prompt built ($(echo "$PROMPT" | wc -c | tr -d ' ') chars)."
 
+# ─── 6b. Check for inbound instructions from orchestrator ────────────────
+
+INBOUND_INSTRUCTIONS=""
+if [[ -n "${PROJECT_ID:-}" ]]; then
+  echo "[run-agent] Checking for inbound instructions..."
+  INBOUND_RAW=$(get_inbound_instructions "$AGENT_NAME" 2>/dev/null || echo "[]")
+  INBOUND_COUNT=$(echo "$INBOUND_RAW" | jq 'length' 2>/dev/null || echo "0")
+  if [[ "$INBOUND_COUNT" -gt 0 ]]; then
+    echo "[run-agent] Found ${INBOUND_COUNT} inbound instruction(s) from orchestrator."
+    INBOUND_INSTRUCTIONS=$(cat <<INSTREOF
+
+## Inbound Instructions from Orchestrator
+The orchestrator has sent you the following instruction(s). Process them as part of this run.
+
+\`\`\`json
+${INBOUND_RAW}
+\`\`\`
+
+After processing, acknowledge each instruction by noting it in your run state.
+INSTREOF
+)
+    # Mark instructions as read
+    echo "$INBOUND_RAW" | jq -r '.[].id // empty' 2>/dev/null | while IFS= read -r msg_id; do
+      if [[ -n "$msg_id" ]]; then
+        mark_processed "$msg_id" "$AGENT_NAME" 2>/dev/null || true
+      fi
+    done
+  else
+    echo "[run-agent] No inbound instructions."
+  fi
+fi
+
+# Append inbound instructions to prompt
+PROMPT="${PROMPT}${INBOUND_INSTRUCTIONS}"
+
 # ─── 7. Run Claude ─────────────────────────────────────────────────────────
 
 echo "[run-agent] Starting Claude for ${AGENT_NAME}..."
@@ -194,7 +230,24 @@ if [[ $CLAUDE_EXIT -ne 0 ]]; then
   echo "[run-agent] WARNING: Claude exited with code ${CLAUDE_EXIT}"
 fi
 
-# ─── 8. Sync state to Supabase ─────────────────────────────────────────────
+# ─── 8. Process outbound messages and sync state ──────────────────────────
+
+echo "[run-agent] Processing outbound messages..."
+flush_outbound_queue "$AGENT_NAME" 2>/dev/null || {
+  echo "[run-agent] WARNING: Outbound message flush failed"
+}
+
+# Send automatic task_complete to orchestrator
+if [[ -n "${PROJECT_ID:-}" ]]; then
+  RUN_STATUS="completed"
+  if [[ $CLAUDE_EXIT -ne 0 ]]; then
+    RUN_STATUS="failed"
+  fi
+  COMPLETE_PAYLOAD="{\"agent\":\"${AGENT_NAME}\",\"status\":\"${RUN_STATUS}\",\"exit_code\":${CLAUDE_EXIT},\"timestamp\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
+  send_message "$AGENT_NAME" "orchestrator" "task_complete" "$COMPLETE_PAYLOAD" 2>/dev/null || {
+    echo "[run-agent] WARNING: Failed to send task_complete to orchestrator"
+  }
+fi
 
 echo "[run-agent] Syncing state to Supabase..."
 sync_all "$AGENT_NAME" 2>/dev/null || {

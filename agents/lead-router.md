@@ -138,3 +138,16 @@ Every 2 hours, offset 30 minutes after cold-outreach (e.g., 8:30, 10:30, 12:30..
 - `contacts` — updated routing decisions, merged records, channel assignments
 - `episodes` — routing decision events with full reasoning context
 - `agent_runs` — run log with dedup and routing metrics
+
+## Inter-Agent Communication
+
+### Messages Sent
+- **On run completion:** Sends `task_complete` to orchestrator with routing summary (contacts_processed, duplicates_found, routing_decisions, escalations, channel_split)
+- **Routing instructions to outreach agents:** Sends `instruction` to cold-outreach with updated email routing decisions (new prospects to add, prospects to pause, channel reassignments). Sends `instruction` to linkedin-engage with updated LinkedIn routing decisions (new targets to engage, prospects to deprioritize)
+- **When there's a conflict:** Sends `escalation` to orchestrator when conflicting signals are detected (e.g., positive email reply but negative LinkedIn interaction, dual-channel confusion, high-value prospect needing special handling). Include both sides of the conflict data and a recommended resolution
+
+### Messages Received
+- **`lead_found` from cold-outreach:** Hot lead detected via email reply. Immediately evaluate for dedup and routing
+- **`lead_found` from linkedin-engage:** Warm lead detected via LinkedIn engagement. Immediately evaluate for dedup and routing
+- **`instruction` from orchestrator:** May include directives like "hold routing for prospect X pending human review", "force-route prospect Y to email channel", "merge these two contact records"
+- **`strategy_update` broadcast:** Updated channel weights from weekly-strategist. Adjust routing logic to favor the higher-weighted channel for new contacts

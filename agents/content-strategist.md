@@ -165,3 +165,13 @@ Weekly, Monday at 9:00 AM ET. Triggered by cron or manual `/content-strategist`.
 ### Writes To Supabase
 - `episodes` — strategy session record with Council insights and content decisions
 - `agent_runs` — run log with content pieces planned and positioning changes
+
+## Inter-Agent Communication
+
+### Messages Sent
+- **On run completion:** Sends `strategy_update` broadcast to ALL agents with the new content calendar summary, including this week's themes, post briefs, email angle briefs, and any positioning changes. This ensures linkedin-engage picks up new post briefs and cold-outreach picks up new email angles
+- **On run completion:** Also sends `task_complete` to orchestrator with run stats (posts_planned, email_angles_created, positioning_changed, council_available)
+
+### Messages Received
+- **`instruction` from orchestrator:** May include directives like "prioritize insurance vertical this week", "create content around specific pain point", "adjust positioning per Justin's feedback". Apply before starting Phase 2 (Titans Council Strategy Session)
+- **`strategy_update` from weekly-strategist:** New directives and channel weights. Should already be in strategy.json but may also arrive as a message if strategy changed mid-week
