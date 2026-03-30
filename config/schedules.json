@@ -29,6 +29,19 @@
       "description": "Sunday 8pm",
       "priority": "high",
       "auto_mode": false
+    },
+    "power-partnerships": {
+      "cron": "0 10 * * 3",
+      "cron_followup": "0 14 * * 5",
+      "description": "Wednesday 10am (research/progression), Friday 2pm (outreach follow-up)",
+      "priority": "medium",
+      "auto_mode": false
+    },
+    "content-engine": {
+      "cron": "0 9 * * 2,4",
+      "description": "Tuesday and Thursday 9am",
+      "priority": "medium",
+      "auto_mode": false
     }
   }
 }
