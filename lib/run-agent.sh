@@ -37,6 +37,7 @@ echo "========================================"
 source "$SCRIPT_DIR/memory.sh"
 source "$SCRIPT_DIR/sync-state.sh"
 source "$SCRIPT_DIR/agent-comms.sh"
+source "$SCRIPT_DIR/paperclip.sh"
 
 # Load env if .env exists
 if [[ -f "$PROJECT_ROOT/.env" ]]; then
@@ -221,6 +222,9 @@ PROMPT="${PROMPT}${INBOUND_INSTRUCTIONS}"
 echo "[run-agent] Starting Claude for ${AGENT_NAME}..."
 echo "────────────────────────────────────────"
 
+# Notify Paperclip: agent is now running
+pc_heartbeat "$AGENT_NAME" "running" "Agent run started" 2>/dev/null || true
+
 eval "echo \"\$PROMPT\" | claude ${AUTO_FLAG} --print -p -"
 
 CLAUDE_EXIT=$?
@@ -228,6 +232,9 @@ echo "────────────────────────�
 
 if [[ $CLAUDE_EXIT -ne 0 ]]; then
   echo "[run-agent] WARNING: Claude exited with code ${CLAUDE_EXIT}"
+  pc_heartbeat "$AGENT_NAME" "failed" "Agent exited with code ${CLAUDE_EXIT}" 2>/dev/null || true
+else
+  pc_heartbeat "$AGENT_NAME" "succeeded" "Agent run completed successfully" 2>/dev/null || true
 fi
 
 # ─── 8. Process outbound messages and sync state ──────────────────────────

@@ -1,0 +1,13 @@
+{
+  "paperclip_url": "http://localhost:3100",
+  "company_id": "886062c6-ef67-403c-8508-ad6c849d5e05",
+  "issue_prefix": "AII",
+  "agents": {
+    "orchestrator": "13c96703-7801-49a1-94e0-961c95ac3813",
+    "cold-outreach": "2db070e1-41ab-46bd-80c1-935ddaab7264",
+    "linkedin-engage": "a6d8fd54-cc12-4af5-b560-45fd0f51ae1b",
+    "lead-router": "b4d10298-c3e5-4408-8b0b-1c7ead46521e",
+    "content-strategist": "e9c0de4f-5fcb-4a43-97fc-a9417bb1c98d",
+    "weekly-strategist": "941d135d-1650-4339-a174-c5a83124027a"
+  }
+}
