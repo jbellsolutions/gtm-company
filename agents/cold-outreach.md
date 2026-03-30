@@ -14,7 +14,7 @@ Every 2 hours during business hours (8am-8pm ET). Triggered by cron or manual `/
 - Supabase `agent_runs` table accessible
 - Supabase `episodes` table accessible
 - Firecrawl API key set for prospect research
-- Slack #gtm-ops channel ID known
+- Supabase `agent_messages` table accessible for run reports
 
 ## Run Checklist
 
@@ -90,13 +90,9 @@ Every 2 hours during business hours (8am-8pm ET). Triggered by cron or manual `/
 18. Insert row into Supabase `agent_runs` table with agent_name `cold_outreach` and the metrics above
 
 ### Phase 5: Report
-19. Post summary to Slack #gtm-ops:
+19. Send `task_complete` message via agent-comms.sh to orchestrator with run stats:
     ```
-    Cold Outreach Run Complete
-    - Drafted: {emails_drafted} new emails
-    - Replies: {replies_processed} processed ({meetings_booked} positive)
-    - Pipeline: {active_count} active prospects
-    - Daily quota: {today_total_sent}/50
+    send_message "cold-outreach" "orchestrator" "task_complete" '{"summary":"Cold Outreach Run Complete","emails_drafted":N,"replies_processed":N,"meetings_booked":N,"active_count":N,"daily_quota":"N/50"}'
     ```
 
 ## State Files
@@ -111,7 +107,7 @@ Every 2 hours during business hours (8am-8pm ET). Triggered by cron or manual `/
 - Supabase contact records
 - Supabase agent_run log entry
 - Supabase episode entries for each reply processed
-- Slack summary in #gtm-ops
+- `task_complete` message via `agent_messages` to orchestrator
 
 ## Guardrails
 - **NEVER auto-send emails.** All emails are created as Gmail drafts only. V1 is human-approved sending.
@@ -122,7 +118,7 @@ Every 2 hours during business hours (8am-8pm ET). Triggered by cron or manual `/
 - **NEVER use generic subject lines** like "Quick question" or "Reaching out." Every subject must reference something specific about the prospect's business.
 - **NEVER fabricate case studies or results.** Only reference real proof points.
 - **If Gmail MCP fails**, skip reply processing and only do new outreach. Log the failure.
-- **If Supabase is unreachable**, abort the run entirely and post error to Slack.
+- **If Supabase is unreachable**, abort the run entirely and log the error locally to `state/cold-outreach/errors.log`.
 
 ## Memory Integration
 

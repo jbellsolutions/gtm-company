@@ -18,7 +18,7 @@ Triggered by cron or manual `/linkedin-engage` with optional `--run morning|midd
 - LinkedIn Autopilot v2 at `~/Desktop/linkedin-autopilot-v2/` operational
 - Titans Council at `~/Desktop/Rethinking Repo's/titans-of-direct-response-mastermind-council/` accessible
 - Supabase `contacts`, `episodes`, `agent_runs` tables accessible
-- Slack #gtm-ops channel ID known
+- Supabase `agent_messages` table accessible for run reports
 - Content strategy from `state/content-strategist/content-calendar.json` (if exists)
 
 ## Run Checklist
@@ -95,13 +95,9 @@ Triggered by cron or manual `/linkedin-engage` with optional `--run morning|midd
 
 ### Phase: Report (All Runs)
 
-22. Post run summary to Slack #gtm-ops:
+22. Send `task_complete` message via agent-comms.sh to orchestrator with run stats:
     ```
-    LinkedIn Engage [{run_type}] Complete
-    - Posts published: {posts_published}
-    - Comments made: {comments_made}
-    - Leads detected: {leads_detected}
-    - Engagement received: {likes + comments on our content}
+    send_message "linkedin-engage" "orchestrator" "task_complete" '{"summary":"LinkedIn Engage [run_type] Complete","run_type":"...","posts_published":N,"comments_made":N,"leads_detected":N,"engagement_received":N}'
     ```
 23. Insert row into Supabase `agent_runs` with agent_name `linkedin_engage`, run_type, and metrics
 
@@ -119,7 +115,7 @@ Triggered by cron or manual `/linkedin-engage` with optional `--run morning|midd
 - Replies to engagement on our content (afternoon run)
 - Warm lead records in Supabase and leads-detected.json
 - Episode logs for every warm lead signal
-- Slack summary per run
+- `task_complete` message via `agent_messages` to orchestrator per run
 
 ## Guardrails
 - **NEVER pitch in comments.** Outbound comments add value only. No links, no CTAs, no "we can help with that."
@@ -129,7 +125,7 @@ Triggered by cron or manual `/linkedin-engage` with optional `--run morning|midd
 - **Max 3 hashtags per post.** No hashtag walls.
 - **NEVER auto-connect or auto-DM.** This agent comments and posts only. Connection requests are a separate human action.
 - **Respect rate limits.** LinkedIn Autopilot v2 handles timing, but if rate-limited, stop immediately and log the event.
-- **If LinkedIn Autopilot v2 is down**, skip the run and post error to Slack. Do not attempt manual browser automation.
+- **If LinkedIn Autopilot v2 is down**, skip the run and send an `escalation` message to orchestrator via agent-comms.sh. Do not attempt manual browser automation.
 - **Content must never be AI-obvious.** No "In today's fast-paced world" or "As a thought leader" phrasing. Write like a real founder.
 
 ## Memory Integration

@@ -5,7 +5,7 @@
 This is the autonomous GTM (Go-To-Market) system for AI Integrators (UsingAIToScale.com). It runs a team of AI agents that handle cold outreach, LinkedIn engagement, lead routing, content strategy, and weekly planning — all coordinated through Supabase memory and local state files.
 
 **Project ID:** `ai-integrators-gtm`
-**Slack Channel:** `#gtm-ops`
+**Comms Channel:** Supabase `agent_messages` table (replaces Slack #gtm-ops)
 
 ## Architecture
 
@@ -25,7 +25,7 @@ state/<agent>/   — Local state files (last-run.json, strategy.json, etc.)
    - Read last-run.json to understand current state
    - Do the work described in the playbook
    - Update state/<agent>/last-run.json with results
-   - Post a summary to #gtm-ops on Slack
+   - Send a `task_complete` message to orchestrator via agent-comms.sh
 3. **Log everything.** All runs are logged to Supabase via sync-state.sh.
 4. **Respect thresholds.** Check config/thresholds.json before any action. Never exceed limits.
 5. **Pick up where you left off.** Check `next_actions` in last-run.json.
@@ -52,10 +52,10 @@ Memory is shared across all agents via Supabase. Use it to:
   - Max 50 emails/day, 10 drafts/run
   - Max 1 LinkedIn post/day, 10 comments/run
   - Max 50,000 tokens/run
-- **Circuit breaker:** If cost exceeds 2x normal, STOP and alert #gtm-ops.
-- **Max 3 consecutive failures** before escalating to #gtm-ops.
+- **Circuit breaker:** If cost exceeds 2x normal, STOP and send an `escalation` message to orchestrator via agent-comms.sh.
+- **Max 3 consecutive failures** before sending an `escalation` message to orchestrator.
 - **Never modify contacts** without logging the change.
-- **When in doubt, STOP** and post to Slack asking for guidance.
+- **When in doubt, STOP** and send an `escalation` message to orchestrator via agent-comms.sh asking for guidance.
 
 ## Expert Series Mode
 
@@ -70,7 +70,7 @@ This system is being documented for productization. Every agent should:
 Agents have access to these integrations:
 - **Gmail** — Search, read, create drafts (NEVER send directly)
 - **ClickUp** — Task management, project tracking
-- **Slack** — Post updates to #gtm-ops, read channels
+- **Supabase agent_messages** — Inter-agent communication and user messaging (replaces Slack)
 - **Google Calendar** — Check availability, schedule meetings
 - **Notion** — Documentation, knowledge base
 - **Firecrawl** — Web scraping for prospect research

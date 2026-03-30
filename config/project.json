@@ -58,12 +58,12 @@
   "integrations": {
     "gmail": true,
     "clickup": true,
-    "slack": true,
+    "slack": false,
     "calendar": true,
     "notion": true,
     "firecrawl": true
   },
-  "slack_channel": "#gtm-ops",
+  "comms_channel": "agent_messages",
   "expert_series_mode": true,
   "documentation_enabled": true
 }

@@ -20,8 +20,7 @@ Triggered by cron or manual `/orchestrator`.
 - Supabase `agent_messages` table accessible
 - Supabase `contacts` table accessible
 - Supabase `episodes` table accessible
-- Slack DM with Justin accessible
-- Slack #gtm-ops channel ID known
+- Supabase `agent_messages` table accessible for user communication (from_agent/to_agent="user")
 - All agent state directories readable
 
 ## Run Checklist
@@ -41,7 +40,7 @@ Triggered by cron or manual `/orchestrator`.
    - Is it overdue? If next expected run was >15 minutes ago and no record exists
 8. For any missed or failed runs:
    - Log a `health_alert` message to `agent_messages` table
-   - If the agent failed 2+ consecutive runs: alert Justin via Slack DM
+   - If the agent failed 2+ consecutive runs: alert Justin via `agent_messages` (from_agent="orchestrator", to_agent="user", message_type="escalation")
    - If the agent is >1 hour overdue: attempt to trigger it via `./lib/run-agent.sh <agent-name> --auto`
 
 ### Phase 3: Process Inter-Agent Messages
@@ -56,12 +55,12 @@ Triggered by cron or manual `/orchestrator`.
     **lead_found:**
     - Verify the lead isn't a duplicate (check Supabase contacts)
     - Route to lead-router by posting an `instruction` message
-    - If high-value lead (revenue signals >$5M): alert Justin via Slack DM
+    - If high-value lead (revenue signals >$5M): alert Justin via `agent_messages` (to_agent="user", message_type="escalation", priority="urgent")
 
     **escalation:**
     - Add to `state/orchestrator/escalations.json`
     - Classify priority: `urgent` (needs human NOW), `high` (needs human today), `normal` (next review)
-    - For urgent: immediately DM Justin on Slack
+    - For urgent: immediately send to Justin via `agent_messages` (to_agent="user", priority="urgent")
     - For high: include in next daily briefing
     - For normal: queue for weekly review
 
@@ -76,7 +75,7 @@ Triggered by cron or manual `/orchestrator`.
     - If recovery fails: escalate to Justin
 
     **instruction:**
-    - These come from Justin (via Slack or direct prompt)
+    - These come from Justin (via dashboard chat or direct prompt)
     - Parse the instruction and route to the appropriate agent(s)
     - Examples:
       - "Focus on staffing agencies" → update strategy.json → broadcast strategy_update
@@ -88,7 +87,7 @@ Triggered by cron or manual `/orchestrator`.
 ### Phase 4: Check Escalations
 13. Review `state/orchestrator/escalations.json` for unresolved items
 14. For each unresolved escalation older than 24 hours:
-    - Re-alert Justin via Slack DM with context
+    - Re-alert Justin via `agent_messages` (to_agent="user", message_type="escalation") with context
     - If older than 72 hours and no response: make a default decision (conservative — hold the lead, pause the action)
 
 ### Phase 5: Process Justin's Instructions
@@ -97,12 +96,12 @@ Triggered by cron or manual `/orchestrator`.
     - Parse intent (which agent? what action? what change?)
     - If it's a strategy change: update `state/weekly-strategist/strategy.json` and broadcast
     - If it's a task for a specific agent: post `instruction` message to that agent
-    - If it's a query (asking for data): gather the data and respond via Slack DM
+    - If it's a query (asking for data): gather the data and respond via `agent_messages` (to_agent="user", message_type="report")
     - Mark the instruction as `processed`
 
 ### Phase 6: Daily Briefings
 17. If this is the **morning heartbeat** (8:00 AM ET +/- 15 min):
-    Generate and post morning briefing to Slack DM with Justin:
+    Generate and post morning briefing to `agent_messages` (from_agent="orchestrator", to_agent="user", message_type="daily_briefing"):
     ```
     Good morning. Here's the GTM Company status:
 
@@ -130,7 +129,7 @@ Triggered by cron or manual `/orchestrator`.
     ```
 
 18. If this is the **evening heartbeat** (8:00 PM ET +/- 15 min):
-    Generate and post evening briefing to Slack DM with Justin:
+    Generate and post evening briefing to `agent_messages` (from_agent="orchestrator", to_agent="user", message_type="daily_briefing"):
     ```
     End of day report:
 
@@ -156,7 +155,7 @@ Triggered by cron or manual `/orchestrator`.
     - Read `state/weekly-strategist/weekly-report.json`
     - Read `state/weekly-strategist/strategy.json` for new directives
     - Summarize key strategy changes and new directives
-    - Post weekly summary to Justin via Slack DM
+    - Post weekly summary to Justin via `agent_messages` (to_agent="user", message_type="report")
     - Ask for approval on any strategy changes flagged as `needs_human_review`
     - Forward approved directives to all agents via broadcast
 
@@ -190,8 +189,8 @@ Triggered by cron or manual `/orchestrator`.
 | `config/schedules.json` | R | Expected agent schedules |
 
 ## Outputs
-- Slack DMs to Justin (briefings, escalations, responses to queries)
-- Slack #gtm-ops posts (system health alerts)
+- Dashboard chat messages to Justin via `agent_messages` (briefings, escalations, responses to queries)
+- System health alerts via `agent_messages` (message_type="health_alert")
 - Inter-agent messages via Supabase `agent_messages` table
 - Updated escalation and instruction state files
 - Supabase agent_run log entry per heartbeat
@@ -205,7 +204,7 @@ Triggered by cron or manual `/orchestrator`.
 - **NEVER modify agent playbooks.** The orchestrator routes and coordinates. It does not rewrite how agents work.
 - **NEVER auto-retry a failed agent more than 2 times.** After 2 retries, escalate to Justin.
 - **NEVER process the same message twice.** Always mark messages as processed before moving on.
-- **If Supabase is unreachable**, post an urgent alert to Slack and halt all agent coordination until connectivity is restored.
+- **If Supabase is unreachable**, halt all agent coordination until connectivity is restored. Log the failure locally to `state/orchestrator/errors.log`.
 - **If an agent has been unhealthy for 4+ hours**, stop scheduling it and alert Justin with full diagnostic info.
 
 ## Memory Integration

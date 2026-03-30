@@ -12,7 +12,7 @@ Weekly, Sunday at 8:00 PM ET. Runs before Monday's content-strategist so its out
 - Supabase `agent_runs` table accessible
 - Supabase `episodes` table accessible
 - Supabase `contacts` table accessible
-- Slack #gtm-ops channel ID known
+- Supabase `agent_messages` table accessible for run reports
 
 ## Run Checklist
 
@@ -160,28 +160,14 @@ Weekly, Sunday at 8:00 PM ET. Runs before Monday's content-strategist so its out
     ```
 17. Log the strategy review as an episode in Supabase `episodes` with type `weekly_strategy_review`
 18. Insert row into Supabase `agent_runs` with agent_name `weekly_strategist`
-19. Post weekly report to Slack #gtm-ops:
+19. Send `task_complete` to orchestrator and broadcast `strategy_update` to all agents via agent-comms.sh:
     ```
-    GTM Weekly Report — Week Ending {date}
-
-    {executive_summary}
-
-    Key Metrics:
-    - Emails: {drafted} drafted, {reply_rate}% reply rate ({trend})
-    - LinkedIn: {posts} posts, {engagement_avg} avg engagement ({trend})
-    - Leads: {leads_generated} new ({trend}), {meetings_booked} meetings
-    - Pipeline: {pipeline_total} active ({pipeline_change} WoW)
-
-    Top Performers:
-    - Email: {best_email_angle}
-    - LinkedIn: {best_linkedin_topic}
-    - Channel: {best_channel}
-
-    Strategy Changes:
-    {bulleted list of new directives}
-
-    Recommendations ({count}):
-    {top 3 recommendations with priority}
+    send_message "weekly-strategist" "orchestrator" "task_complete" '{"summary":"GTM Weekly Report — Week Ending DATE","key_metrics":{...},"trends":{...},"recommendation_count":N,"strategy_changes_count":N}'
+    broadcast "weekly-strategist" "strategy_update" '{"directives":[...],"channel_weights":{...},"icp_refinements":"...","do_not_do":[...]}'
+    ```
+    Also send a `report` message to user (Justin) with the full weekly summary:
+    ```
+    send_message "weekly-strategist" "user" "report" '{"text":"GTM Weekly Report — Week Ending DATE\n\nExecutive Summary...\n\nKey Metrics...\n\nRecommendations..."}'
     ```
 
 ## State Files
@@ -197,7 +183,7 @@ Weekly, Sunday at 8:00 PM ET. Runs before Monday's content-strategist so its out
 - Prioritized recommendations (double down, cut, test, fix)
 - Supabase agent_run log entry
 - Supabase episode for the strategy review
-- Slack weekly report in #gtm-ops
+- `task_complete`, `strategy_update`, and `report` messages via `agent_messages`
 
 ## Guardrails
 - **NEVER fabricate metrics.** If data is missing for a channel, report "N/A" and note the gap. Do not extrapolate or estimate.

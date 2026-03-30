@@ -14,7 +14,7 @@ Every 2 hours, offset 30 minutes after cold-outreach (e.g., 8:30, 10:30, 12:30..
 - Supabase `contacts` table accessible
 - Supabase `episodes` table accessible
 - Supabase `agent_runs` table accessible
-- Slack #gtm-ops channel ID known
+- Supabase `agent_messages` table accessible for run reports
 
 ## Run Checklist
 
@@ -81,7 +81,7 @@ Every 2 hours, offset 30 minutes after cold-outreach (e.g., 8:30, 10:30, 12:30..
     - **Stale leads:** Engaged 30+ days ago but no progression
     - **Dual-channel confusion:** Both channels active with different messaging
 15. Write escalation flags to routing-decisions.json with `needs_human_review: true`
-16. For high-priority escalations, post individual alerts to Slack #gtm-ops
+16. For high-priority escalations, send `escalation` message to orchestrator via agent-comms.sh with priority "high"
 
 ### Phase 6: Update State and Report
 17. Calculate run metrics:
@@ -92,14 +92,9 @@ Every 2 hours, offset 30 minutes after cold-outreach (e.g., 8:30, 10:30, 12:30..
 18. Write updated `state/lead-router/routing-decisions.json`
 19. Insert row into Supabase `agent_runs` with agent_name `lead_router` and metrics
 20. Log each routing decision as an episode in Supabase `episodes`
-21. Post summary to Slack #gtm-ops:
+21. Send `task_complete` message via agent-comms.sh to orchestrator with run summary:
     ```
-    Lead Router Run Complete
-    - Processed: {contacts_processed} contacts
-    - Duplicates merged: {duplicates_found}
-    - Routed: {routing_decisions} new decisions
-    - Escalations: {escalations} need human review
-    - Channel split: {linkedin_count} LinkedIn / {email_count} Email / {both_count} Both
+    send_message "lead-router" "orchestrator" "task_complete" '{"summary":"Lead Router Run Complete","contacts_processed":N,"duplicates_found":N,"routing_decisions":N,"escalations":N,"channel_split":{"linkedin":N,"email":N,"both":N}}'
     ```
 
 ## State Files
@@ -116,7 +111,7 @@ Every 2 hours, offset 30 minutes after cold-outreach (e.g., 8:30, 10:30, 12:30..
 - Escalation flags for human-review contacts
 - Supabase agent_run log entry
 - Episode logs for each routing decision
-- Slack summary and escalation alerts
+- `task_complete` and `escalation` messages via `agent_messages`
 
 ## Guardrails
 - **NEVER contact the same person on two channels within 48 hours.** If email was sent today, LinkedIn engagement waits 48h and vice versa.
@@ -124,7 +119,7 @@ Every 2 hours, offset 30 minutes after cold-outreach (e.g., 8:30, 10:30, 12:30..
 - **NEVER delete a contact.** Dedup means merging records, not removing them. Set status to `merged` on the duplicate.
 - **NEVER override a human routing decision.** If a contact has `routed_by: human` in Supabase, skip it.
 - **NEVER downgrade a warm lead.** If a contact is `warm_lead` status, routing can only maintain or upgrade, never set back to `cold`.
-- **If Supabase is unreachable**, abort the run entirely. Routing without the source of truth creates dangerous conflicts. Post error to Slack.
+- **If Supabase is unreachable**, abort the run entirely. Routing without the source of truth creates dangerous conflicts. Log the error locally to `state/lead-router/errors.log`.
 - **If state files are missing or corrupted**, log the issue and process only Supabase data for that run.
 
 ## Memory Integration

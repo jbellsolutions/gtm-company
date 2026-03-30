@@ -12,7 +12,7 @@ Weekly, Monday at 9:00 AM ET. Triggered by cron or manual `/content-strategist`.
 - Titans Council at `~/Desktop/Rethinking Repo's/titans-of-direct-response-mastermind-council/` accessible via `/titans` slash command
 - Supabase `episodes` table accessible (engagement and performance data)
 - Supabase `agent_runs` table accessible
-- Slack #gtm-ops channel ID known
+- Supabase `agent_messages` table accessible for run reports
 
 ## Run Checklist
 
@@ -113,23 +113,10 @@ Weekly, Monday at 9:00 AM ET. Triggered by cron or manual `/content-strategist`.
     ```
 14. Insert row into Supabase `agent_runs` with agent_name `content_strategist`
 15. Log the strategy session as an episode in Supabase `episodes` with type `strategy_session`
-16. Post content calendar summary to Slack #gtm-ops:
+16. Send `task_complete` message via agent-comms.sh to orchestrator, and broadcast `strategy_update` to all agents:
     ```
-    Content Strategy — Week of {date}
-
-    Council Theme: {main theme}
-
-    LinkedIn Posts:
-    - Mon: {topic} ({vertical focus})
-    - Tue: {topic} ({vertical focus})
-    - Wed: {topic} ({vertical focus})
-    - Thu: {topic} ({vertical focus})
-    - Fri: {topic} ({vertical focus})
-
-    Email Angles: {angle_1}, {angle_2}, {angle_3}
-    Long-form: {title/topic}
-
-    Positioning: {stable or change description}
+    send_message "content-strategist" "orchestrator" "task_complete" '{"summary":"Content Strategy — Week of DATE","posts_planned":5,"email_angles_created":3,"positioning_changed":false,"council_available":true}'
+    broadcast "content-strategist" "strategy_update" '{"week_of":"DATE","council_theme":"...","linkedin_briefs":[...],"email_angles":[...],"positioning":"stable or change"}'
     ```
 
 ## State Files
@@ -145,7 +132,7 @@ Weekly, Monday at 9:00 AM ET. Triggered by cron or manual `/content-strategist`.
 - Updated positioning notes (if Council recommends changes)
 - Supabase agent_run log entry
 - Supabase episode for the strategy session
-- Slack content calendar in #gtm-ops
+- `task_complete` and `strategy_update` messages via `agent_messages`
 
 ## Guardrails
 - **NEVER publish content directly.** This agent creates briefs and calendars only. The linkedin-engage agent handles actual posting.
