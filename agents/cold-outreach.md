@@ -15,6 +15,9 @@ Every 2 hours during business hours (8am-8pm ET). Triggered by cron or manual `/
 - Supabase `episodes` table accessible
 - Firecrawl API key set for prospect research
 - Supabase `agent_messages` table accessible for run reports
+- Supabase `campaign_stats` table accessible (for SmartLead sync)
+- SmartLead API key set (optional -- if not set, SmartLead sync is skipped)
+- `lib/smartlead.sh` available on disk
 
 ## Run Checklist
 
@@ -67,6 +70,21 @@ Every 2 hours during business hours (8am-8pm ET). Triggered by cron or manual `/
     g. Add prospect to pipeline.json with status `draft_created`
     h. Insert contact into Supabase `contacts` table with source `cold_email`
 
+### Phase 3.5: SmartLead Sync
+14a. Source and run the SmartLead sync script to pull latest campaign data into Supabase:
+    ```bash
+    source lib/smartlead.sh
+    sl_sync_to_supabase
+    ```
+    This will:
+    - Pull all SmartLead campaign analytics (sent, opens, replies, bounces)
+    - Upsert each campaign's stats into the `campaign_stats` table in Supabase
+    - Log any new replies as episodes in the `episodes` table
+    - Create an `agent_runs` entry for the sync operation
+    - The GTM dashboard at 167.172.131.251:3200 will update in real-time via Supabase subscriptions
+
+14b. If `SMARTLEAD_API_KEY` is not set, skip this phase and log a warning. The rest of the run continues normally using Gmail-only pipeline data.
+
 ### Phase 4: Update State
 15. Calculate run metrics:
     - `emails_drafted` — number of new drafts created this run
@@ -107,6 +125,7 @@ Every 2 hours during business hours (8am-8pm ET). Triggered by cron or manual `/
 - Supabase contact records
 - Supabase agent_run log entry
 - Supabase episode entries for each reply processed
+- Supabase campaign_stats entries (from SmartLead sync)
 - `task_complete` message via `agent_messages` to orchestrator
 
 ## Guardrails
@@ -147,6 +166,7 @@ All email drafts MUST comply with the CAN-SPAM Act (15 U.S.C. 7701-7713). Violat
 - `contacts` — new prospect records with source, status, first_touch date
 - `agent_runs` — run log with metrics, duration, errors
 - `episodes` — each reply classified as a learning event (what subject line triggered what response)
+- `campaign_stats` — SmartLead campaign analytics (sent, opens, replies, bounces, reply rate) via smartlead.sh sync
 
 ## Inter-Agent Communication
 

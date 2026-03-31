@@ -19,6 +19,23 @@ interface AgentMessage {
   processed_by: string | null;
 }
 
+interface CampaignStat {
+  id: string;
+  campaign_name: string;
+  status: string;
+  sent: number;
+  opens: number;
+  replies: number;
+  bounces: number;
+  reply_rate: number;
+  updated_at: string;
+}
+
+interface PipelineCount {
+  stage: string;
+  count: number;
+}
+
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const AGENTS = [
@@ -87,6 +104,9 @@ export default function ChatPage() {
   const [chatInput, setChatInput] = useState('');
   const [sending, setSending] = useState(false);
   const [agentLastSeen, setAgentLastSeen] = useState<Record<string, string>>({});
+  const [campaigns, setCampaigns] = useState<CampaignStat[]>([]);
+  const [pipelineCounts, setPipelineCounts] = useState<PipelineCount[]>([]);
+  const [showStats, setShowStats] = useState(true);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -137,12 +157,38 @@ export default function ChatPage() {
     setAgentLastSeen(lastSeen);
   }, []);
 
+  const fetchCampaigns = useCallback(async () => {
+    const { data } = await supabase
+      .from('campaign_stats')
+      .select('id, campaign_name, status, sent, opens, replies, bounces, reply_rate, updated_at')
+      .order('updated_at', { ascending: false });
+    if (data) setCampaigns(data);
+  }, []);
+
+  const fetchPipeline = useCallback(async () => {
+    const { data } = await supabase
+      .from('contacts')
+      .select('status');
+    if (data) {
+      const stages = ['new', 'researched', 'contacted', 'replied', 'qualified', 'meeting_booked', 'customer'];
+      const counts: Record<string, number> = {};
+      stages.forEach(s => counts[s] = 0);
+      data.forEach((row: { status: string }) => {
+        const stage = row.status?.toLowerCase().replace(/\s+/g, '_');
+        if (stage && counts[stage] !== undefined) counts[stage]++;
+      });
+      setPipelineCounts(stages.map(s => ({ stage: s, count: counts[s] || 0 })));
+    }
+  }, []);
+
   // ── Initial load + subscriptions ──────────────────────────────────────────
 
   useEffect(() => {
     fetchMessages();
     fetchBriefing();
     fetchAgentActivity();
+    fetchCampaigns();
+    fetchPipeline();
 
     const msgSub = supabase
       .channel('chat-messages')
@@ -153,10 +199,18 @@ export default function ChatPage() {
       })
       .subscribe();
 
+    const campaignSub = supabase
+      .channel('chat-campaign-stats')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'campaign_stats' }, () => {
+        fetchCampaigns();
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(msgSub);
+      supabase.removeChannel(campaignSub);
     };
-  }, [fetchMessages, fetchBriefing, fetchAgentActivity]);
+  }, [fetchMessages, fetchBriefing, fetchAgentActivity, fetchCampaigns, fetchPipeline]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -337,6 +391,112 @@ export default function ChatPage() {
             {messages.length} messages
           </div>
         </header>
+
+        {/* ── Campaign Summary Stats + Quick Actions ────────────────────── */}
+        {showStats && (
+          <div style={{ margin: '12px 24px 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/* Quick Action Buttons */}
+            <div style={{ display: 'flex', gap: 8 }}>
+              {[
+                { label: 'Refresh Stats', action: () => { fetchCampaigns(); fetchPipeline(); fetchAgentActivity(); } },
+                { label: 'Show Replies', action: () => { setChatInput('Show me all recent email replies and their classifications'); } },
+                { label: 'Show Pipeline', action: () => { setChatInput('What does the pipeline look like? How many leads at each stage?'); } },
+              ].map(btn => (
+                <button
+                  key={btn.label}
+                  onClick={btn.action}
+                  style={{
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius)',
+                    padding: '5px 12px',
+                    fontSize: 11,
+                    fontWeight: 500,
+                    color: 'var(--accent-blue)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  {btn.label}
+                </button>
+              ))}
+              <button
+                onClick={() => setShowStats(false)}
+                style={{
+                  marginLeft: 'auto',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  fontSize: 11,
+                  cursor: 'pointer',
+                  padding: '5px 8px',
+                }}
+              >
+                Hide
+              </button>
+            </div>
+
+            {/* Stat Cards Row */}
+            {campaigns.length > 0 && (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(4, 1fr)',
+                gap: 8,
+              }}>
+                <div style={{
+                  background: 'var(--bg-card)', border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius)', padding: '10px 12px',
+                }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Emails Sent</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--accent-blue)', fontFamily: 'var(--font-mono)' }}>
+                    {campaigns.reduce((s, c) => s + c.sent, 0).toLocaleString()}
+                  </div>
+                </div>
+                <div style={{
+                  background: 'var(--bg-card)', border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius)', padding: '10px 12px',
+                }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Replies</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--accent-green)', fontFamily: 'var(--font-mono)' }}>
+                    {campaigns.reduce((s, c) => s + c.replies, 0)}
+                  </div>
+                </div>
+                <div style={{
+                  background: 'var(--bg-card)', border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius)', padding: '10px 12px',
+                }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Pipeline</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--accent-purple)', fontFamily: 'var(--font-mono)' }}>
+                    {pipelineCounts.reduce((s, p) => s + p.count, 0)}
+                  </div>
+                </div>
+                <div style={{
+                  background: 'var(--bg-card)', border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius)', padding: '10px 12px',
+                }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Active Campaigns</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--accent-yellow)', fontFamily: 'var(--font-mono)' }}>
+                    {campaigns.filter(c => c.status === 'active' || c.status === 'STARTED').length}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!showStats && (
+          <div style={{ margin: '8px 24px 0', textAlign: 'right' }}>
+            <button
+              onClick={() => setShowStats(true)}
+              style={{
+                background: 'none', border: 'none', color: 'var(--text-muted)',
+                fontSize: 11, cursor: 'pointer',
+              }}
+            >
+              Show Stats
+            </button>
+          </div>
+        )}
 
         {/* ── Daily Briefing (pinned) ─────────────────────────────────────── */}
         {briefing && (

@@ -85,6 +85,24 @@ interface WeeklyKPIs {
   cost_per_lead: number;
 }
 
+interface CampaignStat {
+  id: string;
+  project_id: string;
+  campaign_name: string;
+  campaign_type: string;
+  status: string;
+  sent: number;
+  opens: number;
+  replies: number;
+  bounces: number;
+  unsubscribed: number;
+  leads_total: number;
+  leads_contacted: number;
+  reply_rate: number;
+  sequence_steps: Record<string, any> | null;
+  updated_at: string;
+}
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const AGENTS = [
@@ -183,6 +201,7 @@ export default function Dashboard() {
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [campaigns, setCampaigns] = useState<CampaignStat[]>([]);
   const [lastHeartbeat, setLastHeartbeat] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -283,6 +302,14 @@ export default function Dashboard() {
     if (data) setMessages(data);
   }, []);
 
+  const fetchCampaigns = useCallback(async () => {
+    const { data } = await supabase
+      .from('campaign_stats')
+      .select('*')
+      .order('updated_at', { ascending: false });
+    if (data) setCampaigns(data);
+  }, []);
+
   // ── Initial load + subscriptions ───────────────────────────────────────────
 
   useEffect(() => {
@@ -291,6 +318,7 @@ export default function Dashboard() {
     fetchKPIs();
     fetchActivity();
     fetchMessages();
+    fetchCampaigns();
 
     const agentSub = supabase
       .channel('agent-status-changes')
@@ -329,14 +357,22 @@ export default function Dashboard() {
       })
       .subscribe();
 
+    const campaignSub = supabase
+      .channel('campaign-stats-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'campaign_stats' }, () => {
+        fetchCampaigns();
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(agentSub);
       supabase.removeChannel(runsSub);
       supabase.removeChannel(episodeSub);
       supabase.removeChannel(contactSub);
       supabase.removeChannel(msgSub);
+      supabase.removeChannel(campaignSub);
     };
-  }, [fetchAgents, fetchPipeline, fetchKPIs, fetchActivity, fetchMessages]);
+  }, [fetchAgents, fetchPipeline, fetchKPIs, fetchActivity, fetchMessages, fetchCampaigns]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -550,6 +586,110 @@ export default function Dashboard() {
             })}
           </div>
         </section>
+
+        {/* ── Cold Email Campaigns ────────────────────────────────────────── */}
+        {campaigns.length > 0 && (
+          <section style={{ marginBottom: 24 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>
+                Cold Email Campaigns
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, fontSize: 12 }}>
+                <span style={{ color: 'var(--text-muted)' }}>
+                  Total sent: <span style={{ color: 'var(--accent-blue)', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>
+                    {campaigns.reduce((s, c) => s + c.sent, 0).toLocaleString()}
+                  </span>
+                </span>
+                <span style={{ color: 'var(--text-muted)' }}>
+                  Real replies: <span style={{ color: 'var(--accent-green)', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>
+                    {campaigns.reduce((s, c) => s + c.replies, 0)}
+                  </span>
+                </span>
+                <span style={{ color: 'var(--text-muted)' }}>
+                  Active: <span style={{ color: 'var(--accent-green)', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>
+                    {campaigns.filter(c => c.status === 'active' || c.status === 'STARTED').length}
+                  </span>
+                </span>
+              </div>
+            </div>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+              gap: 12,
+            }}>
+              {campaigns.map(c => {
+                const replyRate = c.sent > 0 ? ((c.replies / c.sent) * 100).toFixed(1) : '0.0';
+                const openRate = c.sent > 0 ? ((c.opens / c.sent) * 100).toFixed(1) : '0.0';
+                const isActive = c.status === 'active' || c.status === 'STARTED';
+
+                return (
+                  <div key={c.id} style={{
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-lg)',
+                    padding: 16,
+                    transition: 'border-color 0.2s ease',
+                    animation: 'fadeIn 0.3s ease',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                        <div style={{
+                          width: 28, height: 28, borderRadius: 6,
+                          background: 'var(--accent-blue-dim)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 12, fontWeight: 600, color: 'var(--accent-blue)',
+                          fontFamily: 'var(--font-mono)', flexShrink: 0,
+                        }}>E</div>
+                        <span style={{
+                          fontSize: 13, fontWeight: 500,
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
+                          {c.campaign_name}
+                        </span>
+                      </div>
+                      <div style={{
+                        padding: '2px 8px', borderRadius: 20,
+                        fontSize: 11, fontWeight: 500,
+                        color: isActive ? 'var(--accent-green)' : 'var(--text-muted)',
+                        background: isActive ? 'var(--accent-green-dim)' : 'rgba(85,85,85,0.12)',
+                        textTransform: 'capitalize', flexShrink: 0,
+                      }}>
+                        {isActive && (
+                          <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-green)', marginRight: 4 }} />
+                        )}
+                        {c.status}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <div style={{ background: 'var(--bg-input)', borderRadius: 'var(--radius)', padding: '8px 10px' }}>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Sent</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--accent-blue)', fontFamily: 'var(--font-mono)' }}>{c.sent.toLocaleString()}</div>
+                      </div>
+                      <div style={{ background: 'var(--bg-input)', borderRadius: 'var(--radius)', padding: '8px 10px' }}>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Replies</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--accent-green)', fontFamily: 'var(--font-mono)' }}>{c.replies}</div>
+                      </div>
+                      <div style={{ background: 'var(--bg-input)', borderRadius: 'var(--radius)', padding: '8px 10px' }}>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Bounces</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--accent-red)', fontFamily: 'var(--font-mono)' }}>{c.bounces}</div>
+                      </div>
+                      <div style={{ background: 'var(--bg-input)', borderRadius: 'var(--radius)', padding: '8px 10px' }}>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Reply Rate</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--accent-purple)', fontFamily: 'var(--font-mono)' }}>{replyRate}%</div>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Open rate: <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{openRate}%</span></span>
+                      <span style={{ color: 'var(--text-muted)' }}>Updated {timeAgo(c.updated_at)}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         {/* ── Middle Section: Pipeline + KPIs ─────────────────────────────── */}
         <div className="middle-grid" style={{ display: 'grid', gap: 16, marginBottom: 24 }}>
