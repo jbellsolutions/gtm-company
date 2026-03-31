@@ -5,7 +5,9 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '../lib/auth';
 
 const NAV_ITEMS = [
-  { href: '/', label: 'Dashboard' },
+  { href: '/', label: 'Overview' },
+  { href: '/emails', label: 'Cold Email' },
+  { href: '/calls', label: 'Call Center' },
   { href: '/chat', label: 'Chat' },
 ];
 
@@ -22,7 +24,7 @@ export function NavBar() {
       alignItems: 'center',
       gap: 2,
       padding: '0 24px',
-      height: 40,
+      height: 48,
       background: 'var(--bg-primary)',
       borderBottom: '1px solid var(--border)',
       position: 'sticky',
@@ -34,14 +36,19 @@ export function NavBar() {
         marginRight: 24,
       }}>
         <div style={{
-          width: 24, height: 24, borderRadius: 6,
+          width: 28, height: 28, borderRadius: 6,
           background: 'linear-gradient(135deg, var(--accent-blue), var(--accent-purple))',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontWeight: 700, fontSize: 11, color: 'white',
-        }}>G</div>
-        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
-          GTM Company
-        </span>
+          fontWeight: 700, fontSize: 12, color: 'white',
+        }}>AI</div>
+        <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
+            AI Integrators
+          </span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+            GTM Command Center
+          </span>
+        </div>
       </div>
 
       {NAV_ITEMS.map(item => {
@@ -50,6 +57,7 @@ export function NavBar() {
           <Link
             key={item.href}
             href={item.href}
+            className={`nav-tab ${isActive ? 'nav-tab-active' : ''}`}
             style={{
               padding: '8px 14px',
               fontSize: 12,

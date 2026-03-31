@@ -4,8 +4,8 @@ import { NavBar } from './nav';
 import { AuthProvider } from '../lib/auth';
 
 export const metadata: Metadata = {
-  title: 'GTM Company — AI Integrators Dashboard',
-  description: 'Real-time autonomous agent monitoring and pipeline intelligence',
+  title: 'AI Integrators — GTM Command Center',
+  description: 'Cold Email, Call Center, LinkedIn, Content, Partnerships — all in one place',
 };
 
 export default function RootLayout({
