@@ -1,0 +1,124 @@
+name: agent-core
+
+# DigitalOcean App Platform spec for deploying a persistent agent
+# Deploy: doctl apps create --spec deployment/digitalocean-app.yaml
+# Update: doctl apps update <app-id> --spec deployment/digitalocean-app.yaml
+#
+# Replace all <PLACEHOLDER> values before deploying.
+# Set secrets via DigitalOcean dashboard or:
+#   doctl apps update <app-id> --set-env-var KEY=value
+
+services:
+  - name: agent
+    # Source: GitHub repo (recommended) or Docker registry
+    github:
+      repo: jbellsolutions/agent-core      # ← your GitHub repo
+      branch: main
+      deploy_on_push: true                  # auto-deploy on git push
+
+    # Build settings
+    build_command: pip install -r requirements.txt
+    run_command: python main.py
+
+    # Instance sizing — Basic XXS is sufficient for a single persistent agent
+    # Scale up if running multiple agents or heavy tool use
+    instance_size_slug: basic-xxs           # $5/mo — 512 MB RAM, 1 vCPU
+    instance_count: 1                       # Single instance — agents are stateful
+
+    # Health check — agents don't expose HTTP by default
+    # If you add a /health endpoint, configure it here
+    # health_check:
+    #   http_path: /health
+    #   initial_delay_seconds: 30
+
+    # Environment variables
+    # Non-secret values go here; secrets go in envs with type: SECRET
+    envs:
+      # Identity — which agent to run
+      - key: IDENTITY_FILE
+        value: identities/head-of-operations.json
+        scope: RUN_TIME
+
+      - key: TOOLS_FILE
+        value: config/tools.json
+        scope: RUN_TIME
+
+      - key: AGENT_MODEL
+        value: claude-sonnet-4-5
+        scope: RUN_TIME
+
+      - key: LOG_LEVEL
+        value: INFO
+        scope: RUN_TIME
+
+      - key: AI_INTEGRATERZ_REPO
+        value: /workspace/ai-integraterz    # path on the droplet if agents run locally
+        scope: RUN_TIME
+
+      # Secrets — set these in DO dashboard, not here
+      - key: ANTHROPIC_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+
+      - key: SLACK_BOT_TOKEN
+        scope: RUN_TIME
+        type: SECRET
+
+      - key: SLACK_APP_TOKEN
+        scope: RUN_TIME
+        type: SECRET
+
+      - key: JUSTIN_SLACK_USER_ID
+        scope: RUN_TIME
+        type: SECRET
+
+      - key: SUPABASE_URL
+        scope: RUN_TIME
+        type: SECRET
+
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        scope: RUN_TIME
+        type: SECRET
+
+      - key: PIPELINE_RUNNER_URL
+        scope: RUN_TIME
+        type: SECRET
+
+      - key: PIPELINE_API_SECRET
+        scope: RUN_TIME
+        type: SECRET
+
+# ─────────────────────────────────────────────────────────────
+# Alternative: Deploy via Docker on a raw DigitalOcean Droplet
+# (Better for multiple agents on the same server)
+#
+# 1. Create droplet (Ubuntu 22.04, Basic, $6/mo)
+# 2. SSH in and install Docker:
+#    curl -fsSL https://get.docker.com | sh
+#
+# 3. Copy files to droplet:
+#    scp -r . root@<droplet-ip>:/opt/agent-core
+#
+# 4. Create .env from .env.example and fill in values:
+#    cp /opt/agent-core/.env.example /opt/agent-core/.env
+#    nano /opt/agent-core/.env
+#
+# 5. Build and run:
+#    cd /opt/agent-core
+#    docker build -t agent-core -f deployment/Dockerfile .
+#    docker run -d \
+#      --name morgan \
+#      --env-file .env \
+#      --restart always \
+#      agent-core
+#
+# 6. View logs:
+#    docker logs -f morgan
+#
+# To run multiple agents (COO + Head of Operations) on same droplet:
+#    docker run -d --name alex \
+#      --env-file .env \
+#      -e IDENTITY_FILE=identities/coo-template.json \
+#      --restart always \
+#      agent-core
+# ─────────────────────────────────────────────────────────────

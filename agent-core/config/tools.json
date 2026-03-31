@@ -1,0 +1,455 @@
+{
+  "_notes": "Tool schemas in Claude API format. Each tool here must have a matching implementation in tools/*.py and be registered in agent/tools.py.",
+  "tools": [
+    {
+      "name": "get_pipeline_status",
+      "description": "Get the current status of all active clients in the pipeline. Use this to answer questions like 'what's going on?' or for heartbeat checks.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "get_client_info",
+      "description": "Get full details for a specific client by their ID or company name.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "The client's UUID from the database"
+          },
+          "company_name": {
+            "type": "string",
+            "description": "Company name (partial match supported)"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "create_client",
+      "description": "Create a new client in the pipeline. Call this when Justin introduces a new prospect or drops a transcript for someone not yet in the system.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Client's full name"
+          },
+          "company": {
+            "type": "string",
+            "description": "Company name"
+          },
+          "email": {
+            "type": "string",
+            "description": "Client's email address"
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "blueprint",
+              "cert_300",
+              "build_997",
+              "training_contracts"
+            ],
+            "description": "Product tier. Default to build_997 if not specified."
+          },
+          "industry": {
+            "type": "string",
+            "description": "Industry or business type"
+          },
+          "team_size": {
+            "type": "integer",
+            "description": "Number of people on the team"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Any additional notes or context"
+          }
+        },
+        "required": [
+          "name",
+          "company",
+          "email"
+        ]
+      }
+    },
+    {
+      "name": "update_client_stage",
+      "description": "Move a client to a new pipeline stage.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "description": "The client's UUID"
+          },
+          "new_stage": {
+            "type": "string",
+            "enum": [
+              "call_booked",
+              "pre_call_ready",
+              "call_complete",
+              "building",
+              "review",
+              "proposal_ready",
+              "proposal_sent",
+              "active",
+              "closed_lost"
+            ],
+            "description": "The stage to move the client to"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Optional notes about why the stage is changing"
+          }
+        },
+        "required": [
+          "client_id",
+          "new_stage"
+        ]
+      }
+    },
+    {
+      "name": "run_agent",
+      "description": "Trigger a specialist agent to run for a client. Use this to delegate work to your team.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "agent_name": {
+            "type": "string",
+            "enum": [
+              "automation-mapper",
+              "extraction",
+              "contract-generator",
+              "client-slack-setup",
+              "training-builder",
+              "integrator-onboarding",
+              "delivery-packager",
+              "coaching-setup",
+              "30-day-checkpoint",
+              "roi-report",
+              "content-engine",
+              "transcript-parser",
+              "expert-series"
+            ],
+            "description": "Which agent to run"
+          },
+          "client_id": {
+            "type": "string",
+            "description": "The client's UUID"
+          },
+          "flags": {
+            "type": "string",
+            "description": "Optional flags to pass to the agent (e.g. '--pre-call', '--response', '--update build_complete')"
+          }
+        },
+        "required": [
+          "agent_name",
+          "client_id"
+        ]
+      }
+    },
+    {
+      "name": "post_slack_message",
+      "description": "Post a message to a Slack channel. Use for ops updates, client channel milestones, and alerts.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "channel": {
+            "type": "string",
+            "description": "Channel name (without #) or channel ID"
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text (supports Slack markdown)"
+          },
+          "thread_ts": {
+            "type": "string",
+            "description": "Optional: reply in a thread by providing the parent message timestamp"
+          }
+        },
+        "required": [
+          "channel",
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "create_slack_channel",
+      "description": "Create a private Slack channel for a new client engagement.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "company_name": {
+            "type": "string",
+            "description": "Company name \u2014 used to generate the channel name (client-[slug])"
+          }
+        },
+        "required": [
+          "company_name"
+        ]
+      }
+    },
+    {
+      "name": "dm_user",
+      "description": "Send a direct message to a Slack user by their user ID. Use for morning/evening briefs or private alerts to Justin.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Slack user ID (e.g. U0123456789)"
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text (supports Slack markdown)"
+          }
+        },
+        "required": [
+          "user_id",
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "get_current_time",
+      "description": "Get the current date and time in Eastern Time. Use when you need today's date, current hour, or day of week for briefs and scheduling decisions.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "read_file",
+      "description": "Read a local file by path and return its contents. Use for transcripts, notes, or config files Justin has dropped on the server.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Absolute or relative path to the file"
+          },
+          "max_chars": {
+            "type": "integer",
+            "description": "Maximum characters to return (default: 50000)"
+          }
+        },
+        "required": [
+          "file_path"
+        ]
+      }
+    },
+    {
+      "name": "web_fetch",
+      "description": "Fetch a public URL and return its text content. Use to check a client's website before a call or pull public information.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "URL to fetch"
+          },
+          "max_chars": {
+            "type": "integer",
+            "description": "Maximum characters to return (default: 20000)"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "name": "calculate_days_since",
+      "description": "Calculate how many days have passed since a given date. Use for checkpoint timing and upsell delay checks.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "date_string": {
+            "type": "string",
+            "description": "ISO date string (e.g. '2026-03-01T00:00:00Z')"
+          }
+        },
+        "required": [
+          "date_string"
+        ]
+      }
+    },
+    {
+      "name": "get_upsell_signals",
+      "description": "Get pending upsell signals from the database that haven't been actioned yet. Use during heartbeats to check what needs follow-up.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "actioned": {
+            "type": "boolean",
+            "description": "If true, return already-actioned signals. Default false (pending only)."
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "log_upsell_action",
+      "description": "Mark an upsell signal as actioned after Justin has followed up. Prevents duplicate nudges.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "signal_id": {
+            "type": "string",
+            "description": "UUID of the signal in agent_upsell_log"
+          },
+          "action_taken": {
+            "type": "string",
+            "description": "Description of what was done (e.g. 'Pitched Training Contracts on call')"
+          }
+        },
+        "required": [
+          "signal_id",
+          "action_taken"
+        ]
+      }
+    },
+    {
+      "name": "search_entity",
+      "description": "Search for a client or entity by name across the database. Use when Justin references someone by name and you need their ID.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "string",
+            "description": "Table to search (e.g. 'clients')"
+          },
+          "search_term": {
+            "type": "string",
+            "description": "Name or company text to search for"
+          },
+          "search_columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Columns to search (default: ['name', 'company'])"
+          }
+        },
+        "required": [
+          "table",
+          "search_term"
+        ]
+      }
+    },
+    {
+      "name": "get_campaign_pipeline",
+      "description": "Get all active campaigns grouped by stage with counts. Use to see the full GTM pipeline.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "create_campaign",
+      "description": "Create a new campaign in the GTM pipeline.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Campaign name"
+          },
+          "tier": {
+            "type": "string",
+            "description": "Channel type: cold_email, linkedin, phone, social_sdr, partner, content, youtube"
+          },
+          "company": {
+            "type": "string",
+            "description": "Target company/segment"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Campaign notes"
+          },
+          "stage": {
+            "type": "string",
+            "description": "Starting stage (default: draft)"
+          }
+        },
+        "required": [
+          "name",
+          "tier"
+        ]
+      }
+    },
+    {
+      "name": "update_campaign_stage",
+      "description": "Move a campaign to a new pipeline stage.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "Campaign UUID"
+          },
+          "new_stage": {
+            "type": "string",
+            "description": "Target stage: draft, queued, running, paused, replied, converted, closed"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Reason for stage change"
+          }
+        },
+        "required": [
+          "campaign_id",
+          "new_stage"
+        ]
+      }
+    },
+    {
+      "name": "get_cold_email_stats",
+      "description": "Pull live stats from the cold email VPS dashboard (SmartLead data: sent, replies, bounces).",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "get_gtm_overview",
+      "description": "Get a unified overview of all GTM channels \u2014 campaigns by channel, email stats, recent agent activity.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "log_campaign_action",
+      "description": "Log an action taken on a campaign (appears in the operations activity feed).",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "description": "Campaign UUID"
+          },
+          "action": {
+            "type": "string",
+            "description": "Human-readable action description"
+          },
+          "details": {
+            "type": "object",
+            "description": "Additional structured data"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    }
+  ]
+}
